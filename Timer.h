@@ -35,7 +35,7 @@
 #include <functional>
 #include <map>
 
-namespace statefultask {
+namespace threadpool {
 
 #ifndef DOXYGEN
 namespace ordering_category {
@@ -85,9 +85,9 @@ struct Timer
   /*!
    * @brief A timer interval.
    *
-   * A Timer::Interval can only be instantiated from a <code>statefultask::Interval<count, Unit></code>
+   * A Timer::Interval can only be instantiated from a <code>threadpool::Interval<count, Unit></code>
    * and only after main() is already reached. Normally you just want to pass a
-   * <code>statefultask::Interval<count, Unit></code> directly to \ref start.
+   * <code>threadpool::Interval<count, Unit></code> directly to \ref start.
    */
   struct Interval
   {
@@ -97,7 +97,7 @@ struct Timer
     time_point::duration m_duration;
 
     template<TimerTypes::time_point::rep count, typename Unit>
-    friend struct statefultask::Interval;
+    friend struct threadpool::Interval;
     Interval(TimerQueueIndex index_, time_point::duration duration_) : m_index(index_), m_duration(duration_) { Debug(Timer::s_interval_constructed = true); }
    public:
     Interval() { }
@@ -249,4 +249,4 @@ constexpr Timer::time_point::rep Interval<count, Unit>::period;
 template<Timer::time_point::rep count, typename Unit>
 Register<Interval<count, Unit>::period> Interval<count, Unit>::index;
 
-} // namespace statefultask
+} // namespace threadpool

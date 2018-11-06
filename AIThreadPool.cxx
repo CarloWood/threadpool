@@ -32,8 +32,8 @@
 #include <libcwd/type_info.h>
 #endif
 
-using Timer = statefultask::Timer;
-using RunningTimers = statefultask::RunningTimers;
+using Timer = threadpool::Timer;
+using RunningTimers = threadpool::RunningTimers;
 
 //static
 std::atomic<AIThreadPool*> AIThreadPool::s_instance;

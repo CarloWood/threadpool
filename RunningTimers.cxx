@@ -31,12 +31,12 @@
 extern "C" void timer_signal_handler(int)
 {
   //write(1, "\nEntering timer_signal_handler()\n", 33);
-  statefultask::RunningTimers::instance().set_a_timer_expired();
+  threadpool::RunningTimers::instance().set_a_timer_expired();
   AIThreadPool::call_update_current_timer();
   //write(1, "\nLeaving timer_signal_handler()\n", 32);
 }
 
-namespace statefultask {
+namespace threadpool {
 
 RunningTimers::RunningTimers() : m_timer_signum(SIGRTMIN), m_a_timer_expired(false)
 {
@@ -209,8 +209,8 @@ RunningTimers::~RunningTimers()
     timer_queue_t::wat(m_queues[interval])->set_not_running();
 }
 
-} // namespace statefultask
+} // namespace threadpool
 
 namespace {
-  SingletonInstance<statefultask::RunningTimers> dummy __attribute__ ((__unused__));
+  SingletonInstance<threadpool::RunningTimers> dummy __attribute__ ((__unused__));
 } // namespace

@@ -32,7 +32,7 @@
 #include <csignal>
 #include <mutex>
 
-namespace statefultask {
+namespace threadpool {
 
 // This is a tournament tree of queues of timers with the same interval.
 //
@@ -282,4 +282,4 @@ class RunningTimers : public Singleton<RunningTimers>
 #endif
 };
 
-} // namespace statefultask
+} // namespace threadpool

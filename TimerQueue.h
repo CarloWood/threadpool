@@ -28,7 +28,7 @@
 #include "Timer.h"
 #include "debug.h"
 
-namespace statefultask {
+namespace threadpool {
 
 class RunningTimers;
 
@@ -227,4 +227,4 @@ class TimerQueue
   auto debug_end() const { return m_running_timers.end(); }
 };
 
-} // namespace statefultask
+} // namespace threadpool

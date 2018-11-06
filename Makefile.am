@@ -5,8 +5,6 @@ SUBDIRS =
 noinst_LTLIBRARIES = libthreadpool.la
 
 libthreadpool_la_SOURCES = \
-	AIDelayedFunction.h \
-	AIPackagedTask.h \
 	AIThreadPool.cxx \
 	AIThreadPool.h \
 	Timer.cxx \

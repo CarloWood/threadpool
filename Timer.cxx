@@ -27,10 +27,10 @@
 #include "RunningTimers.h"
 #include <cassert>
 
-namespace statefultask {
+namespace threadpool {
 
 //static
-Timer::time_point constexpr statefultask::Timer::s_none;
+Timer::time_point constexpr threadpool::Timer::s_none;
 
 #ifdef CWDEBUG
 //static
@@ -84,7 +84,7 @@ void Indexes::add(Timer::time_point::rep period, Index* index)
   //
   // For example:
   //
-  // statefultask::Interval<10, milliseconds> interval_10ms;
+  // threadpool::Interval<10, milliseconds> interval_10ms;
   //
   // And then use
   //
@@ -92,7 +92,7 @@ void Indexes::add(Timer::time_point::rep period, Index* index)
   //
   // Or use it directly
   //
-  //   timer.start(statefultask::Interval<10, milliseconds>(), ...);
+  //   timer.start(threadpool::Interval<10, milliseconds>(), ...);
   //
   // Do not contruct a Timer::Interval object before reaching main().
   ASSERT(!Timer::s_interval_constructed);
@@ -118,4 +118,4 @@ namespace {
 SingletonInstance<Indexes> dummy __attribute__ ((__unused__));
 } // namespace
 
-} // namespace statefultask
+} // namespace threadpool
