@@ -36,6 +36,7 @@
 #include <functional>
 #include <cstdlib>
 #include <cstdint>
+#include <condition_variable>
 
 
 /*!
@@ -127,6 +128,7 @@ class AIObjectQueue
   std::atomic<size_type> m_tail;    // Next read position.
   std::mutex m_producer_mutex;
   std::mutex m_consumer_mutex;
+  std::condition_variable m_buffer_full;        // Uses mutex m_producer_mutex. Used to wait until the buffer is not full anymore.
 
  public:
   //! Buffer storage alignment. Align the buffer at a multiple of the L1 cache line size.
@@ -251,12 +253,17 @@ class AIObjectQueue
   T move_out()
   {
     auto const current_tail = m_tail.load(std::memory_order_relaxed);
+    auto const current_head = m_head.load(std::memory_order_acquire);
 
     // Call and test ConsumerAccess::length() (must be larger than zero) before calling move_out().
-    ASSERT(current_tail != m_head.load(std::memory_order_acquire));
+    ASSERT(current_tail != current_head);
 
     auto const next_tail = increment(current_tail);
     m_tail.store(next_tail, std::memory_order_release);
+
+    if (AI_UNLIKELY(current_head - current_tail + 1 == 0 || current_head - current_tail == m_capacity))
+      ProducerAccess(this).notify_one();
+
     return std::move(m_start[current_tail]);
   }
 
@@ -315,6 +322,28 @@ class AIObjectQueue
      * @param object The object to move into the buffer.
      */
     void move_in(T&& object) { m_buffer->move_in(std::move(object)); }
+
+    /*!
+     * @brief Unlock producer access and wait.
+     *
+     * Waits until some other thread calls notify_one().
+     */
+    void wait()
+    {
+      DoutEntering(dc::warning, "ProducerAccess::wait()");
+      std::unique_lock<std::mutex> lock(m_buffer->m_producer_mutex, std::adopt_lock);
+      m_buffer->m_buffer_full.wait(lock);
+      Dout(dc::notice, "Returning from ProducerAccess::wait()");
+    }
+
+    /*!
+     * @brief Wake up thread waiting to write to the buffer.
+     */
+    void notify_one()
+    {
+      DoutEntering(dc::notice, "ProducerAccess::notify_one()");
+      m_buffer->m_buffer_full.notify_one();
+    }
 
     /*!
      * @brief Clear the buffer by putting the head where the tail is.
