@@ -30,6 +30,7 @@
 #include <csignal>
 #ifdef CWDEBUG
 #include <libcwd/type_info.h>
+#include <iomanip>
 #endif
 
 using Timer = threadpool::Timer;
@@ -47,8 +48,13 @@ AIThreadPool::Action AIThreadPool::s_call_update_current_timer DEBUG_ONLY(("\"Ti
 //static
 void AIThreadPool::Worker::main(int const self)
 {
-  Debug(NAMESPACE_DEBUG::init_thread());
-  Dout(dc::threadpool, "Thread started.");
+#ifdef CWDEBUG
+  {
+    std::ostringstream thread_name;
+    thread_name << "ThreadPool" << std::dec << std::setfill('0') << std::setw(2) << self;
+    Debug(NAMESPACE_DEBUG::init_thread(thread_name.str()));
+  }
+#endif
   AIThreadPool& thread_pool{AIThreadPool::instance()};
 
   // Unblock the POSIX signals that are used by the timer.
