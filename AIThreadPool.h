@@ -522,6 +522,8 @@ class AIThreadPool
   {
     // The move constructor is not thread-safe. Only the thread that constructed us may move us.
     assert(aithreadid::is_single_threaded(m_constructor_id));
+    // Cannot move ThreadPool while there are workers.
+    assert(number_of_workers() == 0);
     rvalue.m_pillaged = true;
     // Move the queues_container_t.
     *queues_t::wat(m_queues) = std::move(*queues_t::wat(rvalue.m_queues));

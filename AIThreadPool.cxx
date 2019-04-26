@@ -370,6 +370,8 @@ AIThreadPool::AIThreadPool(int number_of_threads, int max_number_of_threads) :
 
 AIThreadPool::~AIThreadPool()
 {
+  DoutEntering(dc::threadpool, "AIThreadPool::~AIThreadPool()");
+
   // Construction and destruction is not thread-safe.
   assert(aithreadid::is_single_threaded(m_constructor_id));
   if (m_pillaged) return;                        // This instance was moved. We don't really exist.
