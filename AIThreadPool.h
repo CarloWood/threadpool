@@ -177,18 +177,18 @@ class AIThreadPool
 #endif
 
    public:
-    Action(DEBUG_ONLY(std::string name)) : m_required(0) COMMA_DEBUG_ONLY(m_name(name)) { }
-    Action(Action&& DEBUG_ONLY(rvalue)) : m_required(0) COMMA_DEBUG_ONLY(m_name(rvalue.m_name)) { ASSERT(rvalue.m_required == 0); }
+    Action(CWDEBUG_ONLY(std::string name)) : m_required(0) COMMA_CWDEBUG_ONLY(m_name(name)) { }
+    Action(Action&& DEBUG_ONLY(rvalue)) : m_required(0) COMMA_CWDEBUG_ONLY(m_name(rvalue.m_name)) { ASSERT(rvalue.m_required == 0); }
 
     void still_required()
     {
-      DEBUG_ONLY(int val =) m_required.fetch_add(1);
+      CWDEBUG_ONLY(int val =) m_required.fetch_add(1);
       Dout(dc::action, m_name << " Action::still_required(): m_required " << val << " --> " << val + 1);
     }
 
     void required()
     {
-      /*DEBUG_ONLY(int val =)*/ m_required.fetch_add(1);
+      /*CWDEBUG_ONLY(int val =)*/ m_required.fetch_add(1);
       sem_post(&s_semaphore.m_semaphore);
       //signal_safe_printf("\n%s Action::required(): m_required %d --> %d; After calling sem_post, semaphore count = %d\n",
       //    m_name.c_str(), val, val + 1, s_semaphore.get_count());
@@ -279,7 +279,7 @@ class AIThreadPool
         m_previous_total_reserved_threads(previous_total_reserved_threads),
         m_total_reserved_threads(previous_total_reserved_threads + reserved_threads),
         m_available_workers(AIThreadPool::instance().number_of_workers() - m_total_reserved_threads)
-        COMMA_DEBUG_ONLY(m_task_action("\"Task queue #" + std::to_string(m_previous_total_reserved_threads) + "\""))
+        COMMA_CWDEBUG_ONLY(m_task_action("\"Task queue #" + std::to_string(m_previous_total_reserved_threads) + "\""))
             // m_previous_total_reserved_threads happens to be equal to the queue number, provided each queue on reserves one thread :/.
       { }
 
@@ -288,7 +288,7 @@ class AIThreadPool
         m_previous_total_reserved_threads(rvalue.m_previous_total_reserved_threads),
         m_total_reserved_threads(rvalue.m_total_reserved_threads),
         m_available_workers(rvalue.m_available_workers.load())
-        COMMA_DEBUG_ONLY(m_task_action(std::move(rvalue.m_task_action)))
+        COMMA_CWDEBUG_ONLY(m_task_action(std::move(rvalue.m_task_action)))
       { }
 
     void available_workers_add(int n) { m_available_workers.fetch_add(n, std::memory_order_relaxed); }
@@ -399,7 +399,7 @@ class AIThreadPool
     // that then blocks the thread from accessing m_quit until that lock is released
     // so that we have time to move the Worker in place (using emplace_back()).
     Worker(worker_function_t worker_function, int self) :
-        m_thread(std::bind(worker_function, self)) COMMA_DEBUG_ONLY(m_thread_id(m_thread.native_handle())) { }
+        m_thread(std::bind(worker_function, self)) COMMA_CWDEBUG_ONLY(m_thread_id(m_thread.native_handle())) { }
 
     // The move constructor can only be called as a result of a reallocation, as a result
     // of a size increase of the std::vector<Worker> (because Worker`s are put into it with

@@ -43,7 +43,7 @@ std::atomic<AIThreadPool*> AIThreadPool::s_instance;
 std::atomic_int AIThreadPool::s_idle_threads;
 
 //static
-AIThreadPool::Action AIThreadPool::s_call_update_current_timer DEBUG_ONLY(("\"Timer\""));
+AIThreadPool::Action AIThreadPool::s_call_update_current_timer CWDEBUG_ONLY(("\"Timer\""));
 
 //static
 void AIThreadPool::Worker::main(int const self)

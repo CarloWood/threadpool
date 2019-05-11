@@ -32,7 +32,7 @@ namespace threadpool {
 //static
 Timer::time_point constexpr threadpool::Timer::s_none;
 
-#ifdef CWDEBUG
+#if CW_DEBUG
 //static
 bool Timer::s_interval_constructed = false;
 #endif

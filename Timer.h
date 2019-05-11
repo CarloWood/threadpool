@@ -68,12 +68,13 @@ struct Interval;
  *
  * The \ref start member function must be passed an Interval object.
  */
-struct Timer
+class Timer
 {
+ public:
   using clock_type = TimerTypes::clock_type;    //!< The underlaying clock type.
   using time_point = TimerTypes::time_point;    //!< The underlaying time point.
 
-#if defined(CWDEBUG) && !defined(DOXYGEN)
+#if CW_DEBUG && !defined(DOXYGEN)
   static bool s_interval_constructed;
 #endif
 
@@ -81,7 +82,6 @@ struct Timer
   // Use a value far in the future to represent 'no timer' (aka, a "timer" that will never expire).
   static time_point constexpr s_none{time_point::duration(std::numeric_limits<time_point::rep>::max())};
 
- public:
   /*!
    * @brief A timer interval.
    *
@@ -98,13 +98,13 @@ struct Timer
 
     template<TimerTypes::time_point::rep count, typename Unit>
     friend struct threadpool::Interval;
-    Interval(TimerQueueIndex index_, time_point::duration duration_) : m_index(index_), m_duration(duration_) { Debug(Timer::s_interval_constructed = true); }
+    Interval(TimerQueueIndex index_, time_point::duration duration_) : m_index(index_), m_duration(duration_) { DEBUG_ONLY(Timer::s_interval_constructed = true); }
    public:
     Interval() { }
 
    public:
     //! A copy constructor is provided, but doesn't seem needed.
-    Interval(Interval const& interval) : m_index(interval.m_index), m_duration(interval.m_duration) { Debug(Timer::s_interval_constructed |= !m_index.undefined()); }
+    Interval(Interval const& interval) : m_index(interval.m_index), m_duration(interval.m_duration) { DEBUG_ONLY(Timer::s_interval_constructed |= !m_index.undefined()); }
 
     //! \internal For debugging purposes mainly.
     time_point::duration duration() { return m_duration; }
