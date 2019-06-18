@@ -25,6 +25,7 @@
 #include "RunningTimers.h"
 #include "AIThreadPool.h"
 #include "utils/macros.h"
+#include "utils/AISignals.h"
 #include <new>
 #include <cstring>
 
@@ -38,7 +39,7 @@ extern "C" void timer_signal_handler(int)
 
 namespace threadpool {
 
-RunningTimers::RunningTimers() : m_timer_signum(SIGRTMIN), m_a_timer_expired(false)
+RunningTimers::RunningTimers() : m_timer_signum(utils::Signals::reserve_and_next_rt_signum()), m_a_timer_expired(false)
 {
   // Initialize m_cache and m_tree.
   for (int interval = 0; interval < tree_size; ++interval)
@@ -52,18 +53,10 @@ RunningTimers::RunningTimers() : m_timer_signum(SIGRTMIN), m_a_timer_expired(fal
     m_tree[index] = m_tree[left_child_of(index)];
 
   // Call timer_signal_handler when the m_timer_signum signal is caught by a thread.
-  struct sigaction action;
-  std::memset(&action, 0, sizeof(struct sigaction));
-  action.sa_handler = timer_signal_handler;
-  if (sigaction(m_timer_signum, &action, NULL) == -1)
-  {
-    perror("sigaction");
-    assert(false);
-  }
-  // Block the signals used by the thread pool (it is unblocked again for thread pool threads).
+  std::cerr << "m_timer_signum = " << m_timer_signum << std::endl;
+  utils::Signals::instance().register_callback(m_timer_signum, timer_signal_handler);
   sigemptyset(&m_timer_sigset);
   sigaddset(&m_timer_sigset, m_timer_signum);
-  sigprocmask(SIG_BLOCK, &m_timer_sigset, nullptr);
 }
 
 RunningTimers::Current::Current() : timer(nullptr)
@@ -72,11 +65,14 @@ RunningTimers::Current::Current() : timer(nullptr)
   struct sigevent sigevent;
   std::memset(&sigevent, 0, sizeof(struct sigevent));
   sigevent.sigev_notify = SIGEV_SIGNAL;
-  sigevent.sigev_signo = RunningTimers::instantiate().m_timer_signum;
+  // Even though this is the constructor of a global object, m_timer_signum is
+  // already initialized at this point, even though RunningTimers hasn't fully
+  // been constructed yet.
+  sigevent.sigev_signo = RunningTimers::instance().m_timer_signum;
+  std::cerr << "sigevent.sigev_signo = " << sigevent.sigev_signo << std::endl;
   if (timer_create(CLOCK_MONOTONIC, &sigevent, &posix_timer) == -1)
   {
-    perror("timer_create");
-    DoutFatal(dc::fatal|error_cf, "timer_create");
+    DoutFatal(dc::fatal|error_cf, "timer_create (with m_timer_signum = " << sigevent.sigev_signo << ")");
   }
 }
 

@@ -558,7 +558,7 @@ class AIThreadPool
   // Queue management.
 
   //! Lock m_queues and get access (return value is to be passed to \ref get_queue).
-  AIThreadPool::queues_t::rat queues_read_access() { return m_queues; }
+  AIThreadPool::queues_t::rat queues_read_access() { return static_cast<AIThreadPool::queues_t::rat>(m_queues); }
 
   /*!
    * @brief Create a new queue.

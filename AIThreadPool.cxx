@@ -26,8 +26,8 @@
 #include "AIThreadPool.h"
 #include "RunningTimers.h"
 #include "Timer.h"
+#include "utils/AISignals.h"
 #include "utils/macros.h"
-#include <csignal>
 #ifdef CWDEBUG
 #include <libcwd/type_info.h>
 #include <iomanip>
@@ -58,7 +58,7 @@ void AIThreadPool::Worker::main(int const self)
   AIThreadPool& thread_pool{AIThreadPool::instance()};
 
   // Unblock the POSIX signals that are used by the timer.
-  sigprocmask(SIG_UNBLOCK, RunningTimers::instance().get_timer_sigset(), nullptr);
+  utils::Signals::unblock(RunningTimers::instance().get_timer_sigset());
 
   // Wait until we have at least one queue.
   int count = 0;

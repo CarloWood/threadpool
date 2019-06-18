@@ -91,6 +91,7 @@ class RunningTimers : public Singleton<RunningTimers>
   int m_timer_signum;
   sigset_t m_timer_sigset;
   std::atomic_bool m_a_timer_expired;
+  // Must be constructed AFTER m_timer_signum because its constructor uses m_timer_signum.
   current_t m_current;
 
   static int constexpr parent_of(int index)                             // Used in increase_cache and decrease_cache.
@@ -166,7 +167,7 @@ class RunningTimers : public Singleton<RunningTimers>
 
  public:
   // Return access type for m_current.
-  current_t::wat access_current() { return m_current; }
+  current_t::wat access_current() { return static_cast<current_t::wat>(m_current); }
 
   /*!
    * This function may only be called when current_w->need_update is
