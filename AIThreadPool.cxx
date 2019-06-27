@@ -27,8 +27,10 @@
 #include "RunningTimers.h"
 #include "Timer.h"
 #include "utils/AISignals.h"
+#include "utils/AIAlert.h"
 #include "utils/macros.h"
 #ifdef CWDEBUG
+#include "utils/debug_ostream_operators.h"
 #include <libcwd/type_info.h>
 #include <iomanip>
 #endif
@@ -127,7 +129,14 @@ void AIThreadPool::Worker::main(int const self)
         }
       } // Do the call back with RunningTimers::m_current unlocked.
       call_update_current_timer();         // Keep calling update_current_timer until it returns nullptr.
-      expired_timer->expire();
+      try
+      {
+        expired_timer->expire();
+      }
+      catch (AIAlert::Error const& error)
+      {
+        Dout(dc::warning, error);
+      }
     }
 
     bool go_idle = false;
@@ -188,10 +197,19 @@ void AIThreadPool::Worker::main(int const self)
 
       while (active)
       {
-        // ***************************************************
-        active = task();   // Invoke the functor.            *
-        // ***************************************************
-        Dout(dc::threadpool, "task() returned " << active);
+        try
+        {
+          // ***************************************************
+          active = task();   // Invoke the functor.            *
+          // ***************************************************
+          Dout(dc::threadpool, "task() returned " << active);
+        }
+        catch (AIAlert::Error const& error)
+        {
+          Dout(dc::warning, error);
+          // FIXME: Not sure what to do here.
+          active = false;
+        }
 
         // Determine the next queue to handle: the highest priority queue that doesn't have all reserved threads idle.
         next_q = q;
