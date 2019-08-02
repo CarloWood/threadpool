@@ -53,7 +53,7 @@ RunningTimers::RunningTimers() : m_timer_signum(utils::Signals::reserve_and_next
     m_tree[index] = m_tree[left_child_of(index)];
 
   // Call timer_signal_handler when the m_timer_signum signal is caught by a thread.
-  std::cerr << "m_timer_signum = " << m_timer_signum << std::endl;
+  //std::cerr << "m_timer_signum = " << m_timer_signum << std::endl;
   utils::Signals::instance().register_callback(m_timer_signum, timer_signal_handler);
   sigemptyset(&m_timer_sigset);
   sigaddset(&m_timer_sigset, m_timer_signum);
@@ -69,7 +69,7 @@ RunningTimers::Current::Current() : timer(nullptr)
   // already initialized at this point, even though RunningTimers hasn't fully
   // been constructed yet.
   sigevent.sigev_signo = RunningTimers::instance().m_timer_signum;
-  std::cerr << "sigevent.sigev_signo = " << sigevent.sigev_signo << std::endl;
+  //std::cerr << "sigevent.sigev_signo = " << sigevent.sigev_signo << std::endl;
   if (timer_create(CLOCK_MONOTONIC, &sigevent, &posix_timer) == -1)
   {
     DoutFatal(dc::fatal|error_cf, "timer_create (with m_timer_signum = " << sigevent.sigev_signo << ")");
