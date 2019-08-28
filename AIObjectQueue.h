@@ -116,6 +116,30 @@
  * and extracting data from the queue. Their const-ness merely means that concurrent
  * access is thread safe.
  */
+
+// The ring buffer when m_capacity == 3 and 2 elements in it.
+//
+//       0       1       2       3
+//   ---------------------------------
+//   |       | data  | data  |       |
+//   |       |       |       |       |
+//   ---------------------------------
+//               ^               ^
+//               |               |
+//              tail            head
+//
+// One call to move_in() later (buffer is now full):
+//
+//       0       1       2       3
+//   ---------------------------------
+//   |       | data  | data  | data  |
+//   |       |       |       |       |
+//   ---------------------------------
+//       ^       ^
+//       |       |
+//      head    tail
+//
+
 template<typename T>
 class AIObjectQueue
 {
@@ -261,6 +285,7 @@ class AIObjectQueue
     auto const next_tail = increment(current_tail);
     m_tail.store(next_tail, std::memory_order_release);
 
+    // If the buffer was full, notify any thread that is possibly waiting.
     if (AI_UNLIKELY(current_head - current_tail + 1 == 0 || current_head - current_tail == m_capacity))
       ProducerAccess(this).notify_one();
 
@@ -326,13 +351,13 @@ class AIObjectQueue
     /*!
      * @brief Unlock producer access and wait.
      *
-     * Waits until some other thread calls notify_one().
+     * Waits until the buffer is not full anymore.
      */
     void wait()
     {
       DoutEntering(dc::warning, "ProducerAccess::wait()");
       std::unique_lock<std::mutex> lock(m_buffer->m_producer_mutex, std::adopt_lock);
-      m_buffer->m_buffer_full.wait(lock);
+      m_buffer->m_buffer_full.wait(lock, [buffer = m_buffer](){ return buffer->producer_length() < buffer->capacity(); });
       Dout(dc::notice, "Returning from ProducerAccess::wait()");
     }
 
@@ -342,6 +367,7 @@ class AIObjectQueue
     void notify_one()
     {
       DoutEntering(dc::notice, "ProducerAccess::notify_one()");
+      // The mutex is already locked (because this is a member of ProducerAccess).
       m_buffer->m_buffer_full.notify_one();
     }
 
