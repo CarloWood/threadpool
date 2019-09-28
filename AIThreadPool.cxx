@@ -293,7 +293,7 @@ void AIThreadPool::Worker::main(int const self)
         current_w->timer = nullptr;     // The timer expired.
       }
 
-      // We just left sem_wait(); reset 'duty' to count how many task we perform
+      // We just left sem_wait(); reset 'duty' to count how many tasks we perform
       // for this single wake-up. Calling available() with a duty larger than
       // zero will call sem_trywait in an attempt to decrease the semaphore
       // count alongside the Action::m_required atomic counter.
@@ -343,8 +343,9 @@ void AIThreadPool::remove_threads(workers_t::rat& workers_r, int n)
   for (int i = 0; i < n; ++i)
     workers_r->at(number_of_threads - 1 - i).quit();
   // Wake up all threads, so the ones that need to quit can quit.
+  Action remove_threads_action(CWDEBUG_ONLY("remove_threads_action"));
   for (int i = 0; i < number_of_threads; ++i)
-    Action::wakeup();
+    remove_threads_action.wakeup();
   // If the relaxed stores to the quit atomic_bool`s is very slow
   // then we might be calling join() on threads before they can see
   // the flag being set. This should not be a problem but theoretically
@@ -445,6 +446,10 @@ AIQueueHandle AIThreadPool::new_queue(int capacity, int reserved_threads)
 
 //static
 AIThreadPool::Action::Semaphore AIThreadPool::Action::s_semaphore;
+#ifdef CWDEBUG
+//static
+benchmark::Stopwatch AIThreadPool::Action::s_sw;
+#endif
 
 #if defined(CWDEBUG) && !defined(DOXYGEN)
 NAMESPACE_DEBUG_CHANNELS_START
