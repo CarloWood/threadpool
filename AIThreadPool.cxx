@@ -343,7 +343,7 @@ void AIThreadPool::remove_threads(workers_t::rat& workers_r, int n)
   for (int i = 0; i < n; ++i)
     workers_r->at(number_of_threads - 1 - i).quit();
   // Wake up all threads, so the ones that need to quit can quit.
-  Action remove_threads_action(CWDEBUG_ONLY("remove_threads_action"));
+  Action remove_threads_action{CWDEBUG_ONLY("remove_threads_action")};
   for (int i = 0; i < number_of_threads; ++i)
     remove_threads_action.wakeup();
   // If the relaxed stores to the quit atomic_bool`s is very slow

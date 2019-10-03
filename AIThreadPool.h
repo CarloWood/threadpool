@@ -32,7 +32,6 @@
 #include "AIObjectQueue.h"
 #include "AIQueueHandle.h"
 #include "debug.h"
-#include "cwds/benchmark.h"
 #include "signal_safe_printf.h"
 #include "threadsafe/AIReadWriteMutex.h"
 #include "threadsafe/AIReadWriteSpinLock.h"
@@ -175,7 +174,6 @@ class AIThreadPool
     std::atomic_int m_required;         // Counter for the number of actions required for this specific task.
 #ifdef CWDEBUG
     std::string m_name;
-    static benchmark::Stopwatch s_sw;
 #endif
 
    public:
@@ -202,14 +200,7 @@ class AIThreadPool
     void wakeup()
     {
       DoutEntering(dc::action, "Action::wakeup()");
-#ifdef CWDEBUG
-      s_sw.start();
-#endif
       sem_post(&s_semaphore.m_semaphore);
-#ifdef CWDEBUG
-      s_sw.stop();
-      Dout(dc::action, "After calling sem_post, " << s_semaphore << "; sem_post took " << (s_sw.diff_cycles() / 3612.05905) << " microseconds.");
-#endif
     }
 
     int available(int& duty)
