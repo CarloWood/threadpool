@@ -446,10 +446,6 @@ AIQueueHandle AIThreadPool::new_queue(int capacity, int reserved_threads)
 
 //static
 AIThreadPool::Action::Semaphore AIThreadPool::Action::s_semaphore;
-#ifdef CWDEBUG
-//static
-benchmark::Stopwatch AIThreadPool::Action::s_sw;
-#endif
 
 #if defined(CWDEBUG) && !defined(DOXYGEN)
 NAMESPACE_DEBUG_CHANNELS_START
