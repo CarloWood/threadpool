@@ -157,26 +157,20 @@ class AIThreadPool
       Dout(dc::action, m_name << " Action::still_required(): m_required " << val << " --> " << val + 1);
     }
 
-    [[gnu::always_inline]] void required()
+    [[gnu::always_inline]] void required(uint32_t n)
     {
-      int prev_required = m_required.fetch_add(1);
+      int prev_required = m_required.fetch_add(n);
 #ifdef CWDEBUG
-      Dout(dc::action, "\"" << m_name << "\" Action::required(): m_required " << prev_required << " --> " << prev_required + 1);
-      //signal_safe_printf("\n%s Action::required(): m_required %d --> %d\n", m_name.c_str(), prev_required, prev_required + 1);
+      Dout(dc::action, "\"" << m_name << "\" Action::required(" << n << "): m_required " << prev_required << " --> " << prev_required + n);
+      //signal_safe_printf("\n%s Action::required(): m_required %d --> %d\n", m_name.c_str(), prev_required, prev_required + n);
 #endif
       if (prev_required == 0)
-        wakeup();
-    }
-
-    void wakeup()
-    {
-      DoutEntering(dc::action, "Action::wakeup()");
-      s_semaphore.post();
+        wakeup_n(n);
     }
 
     void wakeup_n(uint32_t n)
     {
-      DoutEntering(dc::action, "Action::wakeup_n(" << n << ")");
+      DoutEntering(dc::action, "Action::wakeup(" << n < ")");
       s_semaphore.post(n);
     }
 
@@ -189,7 +183,7 @@ class AIThreadPool
         if (!m_required.compare_exchange_weak(queued, queued - 1))
           continue;
         if (queued > 1)
-          wakeup();
+          wakeup_n(1); //(queued - 1);
         if (duty++)             // Is this our second or higher task?
         {
           // Try to avoid waking up a thread that subsequently will have nothing to do.
@@ -279,7 +273,7 @@ class AIThreadPool
     void notify_one() const
     {
       Dout(dc::action, "Calling m_execute_task.required() [Task queue #" << m_previous_total_reserved_threads << "]");
-      m_execute_task.required();
+      m_execute_task.required(1);
     }
 
     void still_required() const
@@ -569,7 +563,7 @@ class AIThreadPool
   static void call_update_current_timer()
   {
     //write(1, "\nCalling s_call_update_current_timer.required()\n", 48);
-    s_call_update_current_timer.required();
+    s_call_update_current_timer.required(1);
   }
 
   //------------------------------------------------------------------------
