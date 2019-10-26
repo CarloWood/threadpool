@@ -35,6 +35,7 @@
 #include "signal_safe_printf.h"
 #include "threadsafe/AIReadWriteMutex.h"
 #include "threadsafe/AIReadWriteSpinLock.h"
+#include "threadsafe/SpinSemaphore.h"
 #include "threadsafe/aithreadid.h"
 #include "threadsafe/aithreadsafe.h"
 #include <thread>
@@ -140,38 +141,8 @@ class AIThreadPool
 
   class Action
   {
-    struct Semaphore
-    {
-      sem_t m_semaphore;
-
-      Semaphore()
-      {
-        sem_init(&m_semaphore, 0 , 0);
-        Dout(dc::action, "Semaphore initialized with count = 0");
-      }
-
-      ~Semaphore()
-      {
-        sem_destroy(&m_semaphore);
-      }
-
-#ifdef CWDEBUG
-      int get_count()
-      {
-        int count;
-        sem_getvalue(&m_semaphore, &count);
-        return count;
-      }
-
-      friend std::ostream& operator<<(std::ostream& os, Semaphore& semaphore)
-      {
-        return os << "semaphore count = " << semaphore.get_count();
-      }
-#endif
-    };
-
-    static Semaphore s_semaphore;       // Global semaphore to wake up all threads of the thread pool.
-    std::atomic_int m_required;         // Counter for the number of actions required for this specific task.
+    static aithreadsafe::SpinSemaphore s_semaphore;     // Global semaphore to wake up all threads of the thread pool.
+    std::atomic_int m_required;                         // Counter for the number of actions required for this specific job.
 #ifdef CWDEBUG
     std::string m_name;
 #endif
@@ -200,12 +171,18 @@ class AIThreadPool
     void wakeup()
     {
       DoutEntering(dc::action, "Action::wakeup()");
-      sem_post(&s_semaphore.m_semaphore);
+      s_semaphore.post();
     }
 
-    int available(int& duty)
+    void wakeup_n(uint32_t n)
     {
-      DoutEntering(dc::action|continued_cf, m_name << " Action::available(" << duty << ") : ");
+      DoutEntering(dc::action, "Action::wakeup_n(" << n << ")");
+      s_semaphore.post(n);
+    }
+
+    int try_obtain(int& duty)
+    {
+      DoutEntering(dc::action|continued_cf, m_name << " Action::try_obtain(" << duty << ") : ");
       int queued;
       while ((queued = m_required.load()) > 0)
       {
@@ -213,22 +190,17 @@ class AIThreadPool
           continue;
         if (queued > 1)
           wakeup();
-        if (duty++)
+        if (duty++)             // Is this our second or higher task?
         {
-          int res;
-          do
-          {
-            res = sem_trywait(&s_semaphore.m_semaphore);
-          }
-          while (AI_UNLIKELY(res == -1 && errno == EINTR));
+          // Try to avoid waking up a thread that subsequently will have nothing to do.
+          CWDEBUG_ONLY(bool token_grab =) s_semaphore.try_wait();
 #ifdef CWDEBUG
-          if (res == -1)
+          if (!token_grab)
           {
             // It is possible that the semaphore count was zero if the task
             // that we just claimed also woke up a non-idle thread. That
             // thread now will have to go around the loop doing nothing.
-            ASSERT(errno == EAGAIN);
-            Dout(dc::action|error_cf, "sem_trywait: count was already 0");
+            Dout(dc::action, "sem_trywait: count was already 0");
           }
           else
           {
@@ -249,19 +221,7 @@ class AIThreadPool
       // Therefore flush all debug output here.
       DoutEntering(dc::action, "Action::wait()");
       Debug(libcw_do.get_ostream()->flush());
-      // Loop until sem_wait return 0, because if it returns -1
-      // due to a signal then we can't rely on it that that was
-      // our timer signal (it could be any signal). Nor am I
-      // sure that it is portable to rely upon sem_wait returning
-      // at all when a signal handler was called.
-      int res;
-      do
-      {
-        res = sem_wait(&s_semaphore.m_semaphore);
-        // Other errors never happen, do they?
-        ASSERT(res == 0 || errno == EINTR);
-      }
-      while (res == -1);
+      s_semaphore.wait();
       Dout(dc::action, "After calling sem_wait, " << s_semaphore);
     }
   };
@@ -274,17 +234,17 @@ class AIThreadPool
                                                 // (number of worker threads minus m_total_reserved_threads minus the number of
                                                 //  worker threads that already work on lower priority queues).
                                                 // The lowest priority queue must have a value of 0.
-    // m_task_action is mutable because it must be changed in const member functions:
+    // m_execute_task is mutable because it must be changed in const member functions:
     // The 'const' there means 'by multiple threads at the same time' (aka "read access").
     // The non-const member functions of Action are thread-safe.
-    mutable Action m_task_action;               // Keep track of number of actions required (number of tasks in the queue).
+    mutable Action m_execute_task;              // Keep track of number of actions required (number of tasks in the queue).
 
     PriorityQueue(int capacity, int previous_total_reserved_threads, int reserved_threads) :
         AIObjectQueue<std::function<bool()>>(capacity),
         m_previous_total_reserved_threads(previous_total_reserved_threads),
         m_total_reserved_threads(previous_total_reserved_threads + reserved_threads),
         m_available_workers(AIThreadPool::instance().number_of_workers() - m_total_reserved_threads)
-        COMMA_CWDEBUG_ONLY(m_task_action("\"Task queue #" + std::to_string(m_previous_total_reserved_threads) + "\""))
+        COMMA_CWDEBUG_ONLY(m_execute_task("\"Task queue #" + std::to_string(m_previous_total_reserved_threads) + "\""))
             // m_previous_total_reserved_threads happens to be equal to the queue number, provided each queue on reserves one thread :/.
       { }
 
@@ -293,7 +253,7 @@ class AIThreadPool
         m_previous_total_reserved_threads(rvalue.m_previous_total_reserved_threads),
         m_total_reserved_threads(rvalue.m_total_reserved_threads),
         m_available_workers(rvalue.m_available_workers.load())
-        COMMA_CWDEBUG_ONLY(m_task_action(std::move(rvalue.m_task_action)))
+        COMMA_CWDEBUG_ONLY(m_execute_task(std::move(rvalue.m_execute_task)))
       { }
 
     void available_workers_add(int n) { m_available_workers.fetch_add(n, std::memory_order_relaxed); }
@@ -318,14 +278,14 @@ class AIThreadPool
      */
     void notify_one() const
     {
-      Dout(dc::action, "Calling m_task_action.required() [Task queue #" << m_previous_total_reserved_threads << "]");
-      m_task_action.required();
+      Dout(dc::action, "Calling m_execute_task.required() [Task queue #" << m_previous_total_reserved_threads << "]");
+      m_execute_task.required();
     }
 
     void still_required() const
     {
-      Dout(dc::action, "Calling m_task_action.still_required() [Task queue #" << m_previous_total_reserved_threads << "]");
-      m_task_action.still_required();
+      Dout(dc::action, "Calling m_execute_task.still_required() [Task queue #" << m_previous_total_reserved_threads << "]");
+      m_execute_task.still_required();
     }
 
     /*!
@@ -340,7 +300,7 @@ class AIThreadPool
      */
     bool task_available(int& duty) const
     {
-      return m_task_action.available(duty);
+      return m_execute_task.try_obtain(duty);
     }
   };
 

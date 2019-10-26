@@ -74,7 +74,7 @@ void AIThreadPool::Worker::main(int const self)
   AIQueueHandle q;              // The current / next queue that this thread is processing.
   q.set_to_zero();              // Start with the highest priority queue (zero).
   std::function<bool()> task;   // The current / last task (moved out of the queue) that this thread is executing / executed.
-  int duty = 0;                 // The number of tasks / actions that this thread performed since it woke up from sem_wait().
+  int duty = 0;                 // The number of required actions that this thread performed since it woke up from sem_wait().
 
   std::atomic_bool quit;        // Keep this boolean outside of the Worker so it isn't necessary to lock m_workers every loop.
 
@@ -89,7 +89,7 @@ void AIThreadPool::Worker::main(int const self)
     Dout(dc::threadpool, "Beginning of thread pool main loop (q = " << q << ')');
 
     Timer::time_point now;
-    while (s_call_update_current_timer.available(duty))
+    while (s_call_update_current_timer.try_obtain(duty))
     {
       Dout(dc::action, "Took ownership of timer action.");
 
@@ -294,7 +294,7 @@ void AIThreadPool::Worker::main(int const self)
       }
 
       // We just left sem_wait(); reset 'duty' to count how many tasks we perform
-      // for this single wake-up. Calling available() with a duty larger than
+      // for this single wake-up. Calling try_obtain() with a duty larger than
       // zero will call sem_trywait in an attempt to decrease the semaphore
       // count alongside the Action::m_required atomic counter.
       duty = 0;
@@ -343,9 +343,8 @@ void AIThreadPool::remove_threads(workers_t::rat& workers_r, int n)
   for (int i = 0; i < n; ++i)
     workers_r->at(number_of_threads - 1 - i).quit();
   // Wake up all threads, so the ones that need to quit can quit.
-  Action remove_threads_action{CWDEBUG_ONLY("remove_threads_action")};
-  for (int i = 0; i < number_of_threads; ++i)
-    remove_threads_action.wakeup();
+  Action remove_threads{CWDEBUG_ONLY("remove_threads")};
+  remove_threads.wakeup_n(number_of_threads);
   // If the relaxed stores to the quit atomic_bool`s is very slow
   // then we might be calling join() on threads before they can see
   // the flag being set. This should not be a problem but theoretically
@@ -445,11 +444,11 @@ AIQueueHandle AIThreadPool::new_queue(int capacity, int reserved_threads)
 }
 
 //static
-AIThreadPool::Action::Semaphore AIThreadPool::Action::s_semaphore;
+aithreadsafe::SpinSemaphore AIThreadPool::Action::s_semaphore;
 
 #if defined(CWDEBUG) && !defined(DOXYGEN)
 NAMESPACE_DEBUG_CHANNELS_START
 channel_ct threadpool("THREADPOOL");
-channel_ct action("ACTION");
+channel_ct action("ACTION");            // Thread Pool Action's.
 NAMESPACE_DEBUG_CHANNELS_END
 #endif
