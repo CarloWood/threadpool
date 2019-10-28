@@ -170,7 +170,7 @@ class AIThreadPool
 
     void wakeup_n(uint32_t n)
     {
-      DoutEntering(dc::action, "Action::wakeup(" << n < ")");
+      DoutEntering(dc::action, "Action::wakeup_n(" << n << ")");
       s_semaphore.post(n);
     }
 
@@ -178,12 +178,12 @@ class AIThreadPool
     {
       DoutEntering(dc::action|continued_cf, m_name << " Action::try_obtain(" << duty << ") : ");
       int queued;
-      while ((queued = m_required.load()) > 0)
+      while ((queued = m_required.load(std::memory_order_relaxed)) > 0)
       {
         if (!m_required.compare_exchange_weak(queued, queued - 1))
           continue;
         if (queued > 1)
-          wakeup_n(1); //(queued - 1);
+          wakeup_n(1);
         if (duty++)             // Is this our second or higher task?
         {
           // Try to avoid waking up a thread that subsequently will have nothing to do.
@@ -218,6 +218,15 @@ class AIThreadPool
       s_semaphore.wait();
       Dout(dc::action, "After calling sem_wait, " << s_semaphore);
     }
+
+#ifdef SPINSEMAPHORE_STATS
+    static std::atomic_int s_woken_but_nothing_to_do;
+    static void print_semaphore_stats_on(std::ostream& os)
+    {
+      os << "Times that a woken thread had nothing to do :" << s_woken_but_nothing_to_do << '\n';
+      s_semaphore.print_stats_on(os);
+    }
+#endif
   };
 
   struct PriorityQueue : public AIObjectQueue<std::function<bool()>>
@@ -582,4 +591,11 @@ class AIThreadPool
     // potentially still read memory locations in the object from before when it was constructed.
     return *s_instance.load(std::memory_order_acquire);
   }
+
+#ifdef SPINSEMAPHORE_STATS
+  static void print_semaphore_stats_on(std::ostream& os)
+  {
+    Action::print_semaphore_stats_on(os);
+  }
+#endif
 };

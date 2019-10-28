@@ -282,6 +282,10 @@ void AIThreadPool::Worker::main(int const self)
       // Destruct the current task if any, to decrement the RefCount.
       task = nullptr;
 
+#ifdef SPINSEMAPHORE_STATS
+      if (duty == 0)
+        Action::s_woken_but_nothing_to_do.fetch_add(1, std::memory_order_relaxed);
+#endif
       // A thread that enters this block has nothing to do.
       s_idle_threads.fetch_add(1);
       Action::wait();
@@ -390,6 +394,10 @@ AIThreadPool::~AIThreadPool()
 {
   DoutEntering(dc::threadpool, "AIThreadPool::~AIThreadPool()");
 
+#ifdef SPINSEMAPHORE_STATS
+  Dout(dc::always, "AIThreadPool semaphore stats:\n" << print_using(&print_semaphore_stats_on));
+#endif
+
   // Construction and destruction is not thread-safe.
   assert(aithreadid::is_single_threaded(m_constructor_id));
   if (m_pillaged) return;                        // This instance was moved. We don't really exist.
@@ -445,6 +453,11 @@ AIQueueHandle AIThreadPool::new_queue(int capacity, int reserved_threads)
 
 //static
 aithreadsafe::SpinSemaphore AIThreadPool::Action::s_semaphore;
+
+#ifdef SPINSEMAPHORE_STATS
+//static
+std::atomic_int AIThreadPool::Action::s_woken_but_nothing_to_do;
+#endif
 
 #if defined(CWDEBUG) && !defined(DOXYGEN)
 NAMESPACE_DEBUG_CHANNELS_START
