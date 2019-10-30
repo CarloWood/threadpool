@@ -143,31 +143,47 @@ class AIThreadPool
 
   class Action
   {
-    static aithreadsafe::SpinSemaphore s_semaphore;     // Global semaphore to wake up all threads of the thread pool.
-    std::atomic_int m_required;                         // Counter for the number of actions required for this specific job.
+    static aithreadsafe::SpinSemaphore s_semaphore;                     // Global semaphore to wake up all threads of the thread pool.
+    std::atomic<uint64_t> m_skipped_required;                           // See constexpr below.
+    static constexpr uint64_t required_mask = 0xffffffff;               // Mask for the bits that count the number of actions required for this specific Action.
+    static constexpr uint64_t skipped_mask = 0xffffffff00000000UL;      // Mask for the bits that count the number of times wakeup_n(1) was skipped in required().
+    static constexpr int skipped_shift = 32;
 #ifdef CWDEBUG
     std::string m_name;
 #endif
 
    public:
-    Action(CWDEBUG_ONLY(std::string name)) : m_required(0) COMMA_CWDEBUG_ONLY(m_name(name)) { }
-    Action(Action&& DEBUG_ONLY(rvalue)) : m_required(0) COMMA_CWDEBUG_ONLY(m_name(rvalue.m_name)) { ASSERT(rvalue.m_required == 0); }
+    Action(CWDEBUG_ONLY(std::string name)) : m_skipped_required(0) COMMA_CWDEBUG_ONLY(m_name(name)) { }
+    Action(Action&& DEBUG_ONLY(rvalue)) : m_skipped_required(0) COMMA_CWDEBUG_ONLY(m_name(rvalue.m_name)) { ASSERT(rvalue.m_skipped_required == 0); }
 
     void still_required()
     {
-      CWDEBUG_ONLY(int val =) m_required.fetch_add(1);
-      Dout(dc::action, m_name << " Action::still_required(): m_required " << val << " --> " << val + 1);
-    }
-
-    [[gnu::always_inline]] void required(uint32_t n)
-    {
-      int prev_required = m_required.fetch_add(n);
+      CWDEBUG_ONLY(uint64_t skipped_required =) m_skipped_required.fetch_add(1);
 #ifdef CWDEBUG
-      Dout(dc::action, "\"" << m_name << "\" Action::required(" << n << "): m_required " << prev_required << " --> " << prev_required + n);
+      uint32_t prev_required = skipped_required & required_mask;
+      Dout(dc::action, "\"" << m_name << "\" Action::still_required(): required count " << prev_required << " --> " << prev_required + 1);
       //signal_safe_printf("\n%s Action::required(): m_required %d --> %d\n", m_name.c_str(), prev_required, prev_required + n);
 #endif
-      if (prev_required == 0)
+    }
+
+    void required(uint32_t n)
+    {
+      uint64_t skipped_required = m_skipped_required.load(std::memory_order_relaxed);
+      uint64_t new_skipped_required;
+      do
+      {
+        ASSERT((skipped_required >> skipped_shift) <= (skipped_required & required_mask));
+        new_skipped_required = skipped_required == 0 ? skipped_required + n : skipped_required + (static_cast<uint64_t>(n) << skipped_shift) + n;
+      }
+      while (!m_skipped_required.compare_exchange_weak(skipped_required, new_skipped_required, std::memory_order_release));
+      if (skipped_required == 0)
         wakeup_n(n);
+
+#ifdef CWDEBUG
+      uint32_t prev_required = skipped_required & required_mask;
+      Dout(dc::action, "\"" << m_name << "\" Action::required(" << n << "): required count " << prev_required << " --> " << prev_required + n);
+      //signal_safe_printf("\n%s Action::required(): m_required %d --> %d\n", m_name.c_str(), prev_required, prev_required + n);
+#endif
     }
 
     void wakeup_n(uint32_t n)
@@ -176,16 +192,18 @@ class AIThreadPool
       s_semaphore.post(n);
     }
 
-    int try_obtain(int& duty)
+    bool try_obtain(int& duty)
     {
       DoutEntering(dc::action|continued_cf, m_name << " Action::try_obtain(" << duty << ") : ");
-      int queued;
-      while ((queued = m_required.load(std::memory_order_relaxed)) > 0)
+      uint64_t skipped_required;
+      while ((skipped_required = m_skipped_required.load(std::memory_order_relaxed)) > 0)       // If >0 then the required count must be larger than zero.
       {
-        if (!m_required.compare_exchange_weak(queued, queued - 1))
+        uint64_t new_skipped_required = (skipped_required & required_mask) - 1;         // Decrement required count and reset skipped count.
+        if (!m_skipped_required.compare_exchange_weak(skipped_required, new_skipped_required, std::memory_order_acquire))
           continue;
-        if (queued > 1)
-          wakeup_n(1);
+        uint32_t skipped = skipped_required >> skipped_shift;
+        if (skipped > 0)
+          wakeup_n(skipped);
         if (duty++)             // Is this our second or higher task?
         {
           // Try to avoid waking up a thread that subsequently will have nothing to do.
@@ -204,11 +222,15 @@ class AIThreadPool
           }
 #endif
         }
-        Dout(dc::finish, "m_required " << queued << " --> " << queued - 1);
-        return queued;
+#ifdef CWDEBUG
+        int prev_required = skipped_required & required_mask;
+        ASSERT(prev_required > 0);
+        Dout(dc::finish, "Required count " << prev_required << " --> " << prev_required - 1);
+#endif
+        return true;
       }
       Dout(dc::finish, "no");
-      return 0;
+      return false;
     }
 
     static void wait()
