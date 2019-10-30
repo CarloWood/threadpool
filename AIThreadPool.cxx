@@ -75,6 +75,9 @@ void AIThreadPool::Worker::main(int const self)
   q.set_to_zero();              // Start with the highest priority queue (zero).
   std::function<bool()> task;   // The current / last task (moved out of the queue) that this thread is executing / executed.
   int duty = 0;                 // The number of required actions that this thread performed since it woke up from sem_wait().
+#ifdef SPINSEMAPHORE_STATS
+  bool new_thread = true;
+#endif
 
   std::atomic_bool quit;        // Keep this boolean outside of the Worker so it isn't necessary to lock m_workers every loop.
 
@@ -283,13 +286,23 @@ void AIThreadPool::Worker::main(int const self)
       task = nullptr;
 
 #ifdef SPINSEMAPHORE_STATS
-      if (duty == 0)
+      if (AI_UNLIKELY(new_thread))
+      {
+        new_thread = false;
+        Action::s_new_thread_duty.fetch_add(duty, std::memory_order_relaxed);
+      }
+      else if (duty == 0)
         Action::s_woken_but_nothing_to_do.fetch_add(1, std::memory_order_relaxed);
+      else
+        Action::s_woken_duty.fetch_add(duty, std::memory_order_relaxed);
 #endif
       // A thread that enters this block has nothing to do.
       s_idle_threads.fetch_add(1);
       Action::wait();
       s_idle_threads.fetch_sub(1);
+#ifdef SPINSEMAPHORE_STATS
+      Action::s_woken_up.fetch_add(1, std::memory_order_relaxed);
+#endif
       if (RunningTimers::instance().a_timer_expired())
       {
         auto current_w{RunningTimers::instance().access_current()};
@@ -395,7 +408,7 @@ AIThreadPool::~AIThreadPool()
   DoutEntering(dc::threadpool, "AIThreadPool::~AIThreadPool()");
 
 #ifdef SPINSEMAPHORE_STATS
-  Dout(dc::always, "AIThreadPool semaphore stats:\n" << print_using(&print_semaphore_stats_on));
+  Dout(dc::semaphorestats, "AIThreadPool semaphore stats:\n" << print_using(&print_semaphore_stats_on));
 #endif
 
   // Construction and destruction is not thread-safe.
@@ -456,7 +469,10 @@ aithreadsafe::SpinSemaphore AIThreadPool::Action::s_semaphore;
 
 #ifdef SPINSEMAPHORE_STATS
 //static
+std::atomic_int AIThreadPool::Action::s_woken_up;
 std::atomic_int AIThreadPool::Action::s_woken_but_nothing_to_do;
+std::atomic_int AIThreadPool::Action::s_new_thread_duty;
+std::atomic_int AIThreadPool::Action::s_woken_duty;
 #endif
 
 #if defined(CWDEBUG) && !defined(DOXYGEN)

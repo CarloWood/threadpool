@@ -42,7 +42,9 @@
 #include <atomic>
 #include <cassert>
 #include <condition_variable>
-#include <semaphore.h>
+#ifdef SPINSEMAPHORE_STATS
+#include <iomanip>
+#endif
 
 #if defined(CWDEBUG) && !defined(DOXYGEN)
 NAMESPACE_DEBUG_CHANNELS_START
@@ -220,10 +222,16 @@ class AIThreadPool
     }
 
 #ifdef SPINSEMAPHORE_STATS
+    static std::atomic_int s_woken_up;
     static std::atomic_int s_woken_but_nothing_to_do;
+    static std::atomic_int s_new_thread_duty;
+    static std::atomic_int s_woken_duty;
     static void print_semaphore_stats_on(std::ostream& os)
     {
-      os << "Times that a woken thread had nothing to do :" << s_woken_but_nothing_to_do << '\n';
+      os << "Times that a thread woke up: " << s_woken_up << '\n';
+      os << "Times that a woken thread had nothing to do: " << s_woken_but_nothing_to_do << std::fixed << std::setprecision(2) <<
+        " (" << (100.0 * s_woken_but_nothing_to_do / s_woken_up) << "%).\n";
+      os << "Total duty: " << (s_new_thread_duty + s_woken_duty) << " (average " << std::setprecision(2) << (1.0 * s_woken_duty / s_woken_up) << " per woken thread + " << s_new_thread_duty << " for new threads).\n";
       s_semaphore.print_stats_on(os);
     }
 #endif
@@ -303,6 +311,7 @@ class AIThreadPool
      */
     bool task_available(int& duty) const
     {
+      Dout(dc::action, "Calling m_execute_task.task_available(" << duty << ") [Task queue #" << m_previous_total_reserved_threads << "]");
       return m_execute_task.try_obtain(duty);
     }
   };
