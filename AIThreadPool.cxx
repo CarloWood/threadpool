@@ -39,10 +39,10 @@ using Timer = threadpool::Timer;
 using RunningTimers = threadpool::RunningTimers;
 
 //static
-std::atomic<AIThreadPool*> AIThreadPool::s_instance;
+std::atomic<AIThreadPool*> AIThreadPool::s_instance = ATOMIC_VAR_INIT(nullptr);
 
 //static
-std::atomic_int AIThreadPool::s_idle_threads;
+std::atomic_int AIThreadPool::s_idle_threads = ATOMIC_VAR_INIT(0);
 
 //static
 AIThreadPool::Action AIThreadPool::s_call_update_current_timer CWDEBUG_ONLY(("\"Timer\""));
@@ -79,7 +79,7 @@ void AIThreadPool::Worker::main(int const self)
   bool new_thread = true;
 #endif
 
-  std::atomic_bool quit;        // Keep this boolean outside of the Worker so it isn't necessary to lock m_workers every loop.
+  std::atomic_bool quit(false); // Keep this boolean outside of the Worker so it isn't necessary to lock m_workers every loop.
 
   // This must be a read lock. We are not allowed to write-lock m_workers because
   // at termination m_workers is read locked while joining threads and if that
@@ -469,10 +469,10 @@ aithreadsafe::SpinSemaphore AIThreadPool::Action::s_semaphore;
 
 #ifdef SPINSEMAPHORE_STATS
 //static
-std::atomic_int AIThreadPool::Action::s_woken_up;
-std::atomic_int AIThreadPool::Action::s_woken_but_nothing_to_do;
-std::atomic_int AIThreadPool::Action::s_new_thread_duty;
-std::atomic_int AIThreadPool::Action::s_woken_duty;
+std::atomic_int AIThreadPool::Action::s_woken_up = ATOMIC_VAR_INIT(0);
+std::atomic_int AIThreadPool::Action::s_woken_but_nothing_to_do = ATOMIC_VAR_INIT(0);
+std::atomic_int AIThreadPool::Action::s_new_thread_duty = ATOMIC_VAR_INIT(0);
+std::atomic_int AIThreadPool::Action::s_woken_duty = ATOMIC_VAR_INIT(0);
 #endif
 
 #if defined(CWDEBUG) && !defined(DOXYGEN)
