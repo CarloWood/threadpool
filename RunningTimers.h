@@ -88,9 +88,9 @@ class RunningTimers : public Singleton<RunningTimers>
     Current();
   };
   using current_t = aithreadsafe::Wrapper<Current, aithreadsafe::policy::Primitive<std::mutex>>;
-  int m_timer_signum;
-  sigset_t m_timer_sigset;
-  std::atomic_bool m_a_timer_expired;
+  int m_timer_signum;                                                   // Signal number used for the m_current::posix_timer.
+  sigset_t m_timer_sigset;                                              // Same, but as a mask.
+  std::atomic_bool m_a_timer_expired;                                   // Set by the m_timer_signum signal handler.
   // Must be constructed AFTER m_timer_signum because its constructor uses m_timer_signum.
   current_t m_current;
 
@@ -189,8 +189,8 @@ class RunningTimers : public Singleton<RunningTimers>
   Timer* update_current_timer(current_t::wat& current_w, Timer::time_point now);
 
   sigset_t const* get_timer_sigset() const { return &m_timer_sigset; }
-  void set_a_timer_expired() { ASSERT(!m_a_timer_expired); m_a_timer_expired = true; }
-  bool a_timer_expired() { bool expected = true; return m_a_timer_expired.compare_exchange_strong(expected, false); }
+  void set_a_timer_expired() { DEBUG_ONLY(bool prev_value) = m_a_timer_expired.exchange(true, std::memory_order_release); ASSERT(!prev_value); }
+  bool test_and_clear_a_timer_expired() { return m_a_timer_expired.exchange(false, std::memory_order_acquire); }
 
   int to_cache_index(TimerQueueIndex index) const { return index.get_value(); }
   TimerQueueIndex to_queues_index(int index) const { return TimerQueueIndex(index); }

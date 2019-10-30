@@ -102,7 +102,7 @@ void AIThreadPool::Worker::main(int const self)
         // If this is (still) true then it wasn't reset by a thread that was
         // woken up by the signal handler, which means nothing except that
         // we were not just woken up.
-        bool last_timer_expired = RunningTimers::instance().a_timer_expired();
+        bool last_timer_expired = RunningTimers::instance().test_and_clear_a_timer_expired();
         auto current_w{RunningTimers::instance().access_current()};
         if (last_timer_expired)
         {
@@ -130,7 +130,7 @@ void AIThreadPool::Worker::main(int const self)
           // Other threads won't call update_current_timer anymore until that timer expired.
           break;
         }
-      } // Do the call back with RunningTimers::m_current unlocked.
+      } // Do the callback with RunningTimers::m_current unlocked.
       call_update_current_timer();         // Keep calling update_current_timer until it returns nullptr.
       try
       {
@@ -303,7 +303,7 @@ void AIThreadPool::Worker::main(int const self)
 #ifdef SPINSEMAPHORE_STATS
       Action::s_woken_up.fetch_add(1, std::memory_order_relaxed);
 #endif
-      if (RunningTimers::instance().a_timer_expired())
+      if (RunningTimers::instance().test_and_clear_a_timer_expired())
       {
         auto current_w{RunningTimers::instance().access_current()};
         Dout(dc::threadpool|flush_cf, "Timer " << (void*)current_w->timer << " woke up a thread.");
