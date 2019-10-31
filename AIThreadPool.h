@@ -149,20 +149,36 @@ class AIThreadPool
     static constexpr uint64_t skipped_mask = 0xffffffff00000000UL;      // Mask for the bits that count the number of times wakeup_n(1) was skipped in required().
     static constexpr int skipped_shift = 32;
 #ifdef CWDEBUG
-    std::string m_name;
+    std::string m_quoted_name;
 #endif
 
    public:
-    Action(CWDEBUG_ONLY(std::string name)) : m_skipped_required(0) COMMA_CWDEBUG_ONLY(m_name(name)) { }
-    Action(Action&& DEBUG_ONLY(rvalue)) : m_skipped_required(0) COMMA_CWDEBUG_ONLY(m_name(rvalue.m_name)) { ASSERT(rvalue.m_skipped_required == 0); }
+    void wakeup_n(uint32_t n)
+    {
+      s_semaphore.post(n);
+    }
+
+    static void wait()
+    {
+      // If this is the last thread that goes to sleep, it might be the last debug output for a while.
+      // Therefore flush all debug output here.
+      DoutEntering(dc::action, "Action::wait()");
+      Debug(libcw_do.get_ostream()->flush());
+      s_semaphore.wait();
+      Dout(dc::action, "After calling sem_wait, " << s_semaphore);
+    }
+
+   public:
+    Action(CWDEBUG_ONLY(std::string name)) : m_skipped_required(0) COMMA_CWDEBUG_ONLY(m_quoted_name(name)) { }
+    Action(Action&& DEBUG_ONLY(rvalue)) : m_skipped_required(0) COMMA_CWDEBUG_ONLY(m_quoted_name(rvalue.m_quoted_name)) { ASSERT(rvalue.m_skipped_required == 0); }
 
     void still_required()
     {
       CWDEBUG_ONLY(uint64_t skipped_required =) m_skipped_required.fetch_add(1);
 #ifdef CWDEBUG
       uint32_t prev_required = skipped_required & required_mask;
-      Dout(dc::action, "\"" << m_name << "\" Action::still_required(): required count " << prev_required << " --> " << prev_required + 1);
-      //signal_safe_printf("\n%s Action::required(): m_required %d --> %d\n", m_name.c_str(), prev_required, prev_required + n);
+      Dout(dc::action, m_quoted_name << " Action::still_required(): required count " << prev_required << " --> " << prev_required + 1);
+      //signal_safe_printf("\n%s Action::required(): m_required %d --> %d\n", m_quoted_name.c_str(), prev_required, prev_required + n);
 #endif
     }
 
@@ -181,20 +197,14 @@ class AIThreadPool
 
 #ifdef CWDEBUG
       uint32_t prev_required = skipped_required & required_mask;
-      Dout(dc::action, "\"" << m_name << "\" Action::required(" << n << "): required count " << prev_required << " --> " << prev_required + n);
-      //signal_safe_printf("\n%s Action::required(): m_required %d --> %d\n", m_name.c_str(), prev_required, prev_required + n);
+      Dout(dc::action, m_quoted_name << " Action::required(" << n << "): required count " << prev_required << " --> " << prev_required + n);
+      //signal_safe_printf("\n%s Action::required(): m_required %d --> %d\n", m_quoted_name.c_str(), prev_required, prev_required + n);
 #endif
-    }
-
-    void wakeup_n(uint32_t n)
-    {
-      DoutEntering(dc::action, "Action::wakeup_n(" << n << ")");
-      s_semaphore.post(n);
     }
 
     bool try_obtain(int& duty)
     {
-      DoutEntering(dc::action|continued_cf, m_name << " Action::try_obtain(" << duty << ") : ");
+      DoutEntering(dc::action|continued_cf, m_quoted_name << " Action::try_obtain(" << duty << ") : ");
       uint64_t skipped_required;
       while ((skipped_required = m_skipped_required.load(std::memory_order_relaxed)) > 0)       // If >0 then the required count must be larger than zero.
       {
@@ -231,16 +241,6 @@ class AIThreadPool
       }
       Dout(dc::finish, "no");
       return false;
-    }
-
-    static void wait()
-    {
-      // If this is the last thread that goes to sleep, it might be the last debug output for a while.
-      // Therefore flush all debug output here.
-      DoutEntering(dc::action, "Action::wait()");
-      Debug(libcw_do.get_ostream()->flush());
-      s_semaphore.wait();
-      Dout(dc::action, "After calling sem_wait, " << s_semaphore);
     }
 
 #ifdef SPINSEMAPHORE_STATS
@@ -311,13 +311,11 @@ class AIThreadPool
      */
     void notify_one() const
     {
-      Dout(dc::action, "Calling m_execute_task.required() [Task queue #" << m_previous_total_reserved_threads << "]");
       m_execute_task.required(1);
     }
 
     void still_required() const
     {
-      Dout(dc::action, "Calling m_execute_task.still_required() [Task queue #" << m_previous_total_reserved_threads << "]");
       m_execute_task.still_required();
     }
 
@@ -333,7 +331,6 @@ class AIThreadPool
      */
     bool task_available(int& duty) const
     {
-      Dout(dc::action, "Calling m_execute_task.task_available(" << duty << ") [Task queue #" << m_previous_total_reserved_threads << "]");
       return m_execute_task.try_obtain(duty);
     }
   };
@@ -359,7 +356,7 @@ class AIThreadPool
   struct Quit
   {
     bool m_quit_called;                 // Set after calling quit().
-    std::atomic_bool* m_quit_ptr;       // Only valid while m_quit_called is false (or while we're still inside Worker::main()).
+    std::atomic_bool* m_quit_ptr;       // Only valid while m_quit_called is false (or while we're still inside Worker::tmain()).
 
     Quit() : m_quit_called(false), m_quit_ptr(nullptr) { }
 
@@ -376,7 +373,7 @@ class AIThreadPool
     {
       if (m_quit_ptr)
         m_quit_ptr->store(true, std::memory_order_relaxed);
-      // From this point on we might leave Worker::main() which makes m_quit invalid.
+      // From this point on we might leave Worker::tmain() which makes m_quit invalid.
       m_quit_called = true;
     }
   };
@@ -448,7 +445,7 @@ class AIThreadPool
     }
 
     // The main function for each of the worker threads.
-    static void main(int const self);
+    static void tmain(int const self);
 
     // Called from worker thread.
     static int get_handle();
@@ -597,6 +594,14 @@ class AIThreadPool
   queues_container_t::value_type const& get_queue(queues_t::rat& queues_r, AIQueueHandle queue_handle) { return queues_r->at(queue_handle); }
 
   /*!
+   * @brief Change the maximum number of thread pool task queues.
+   *
+   * This member function must be called immediately after constructing the AIThreadPool.
+   * The default is 8.
+   */
+  void set_max_number_of_queues(size_t max_number_of_queues) { queues_t::wat(m_queues)->reserve(max_number_of_queues); }
+
+  /*!
    * @brief Cause a call to RunningTimers::update_current_timer() (possibly by another thread).
    * Called from the timer signal handler.
    */
@@ -615,7 +620,7 @@ class AIThreadPool
    */
   static AIThreadPool& instance()
   {
-    // Construct an AIThreadPool somewhere, preferably at the beginning of main().
+    // Construct an AIThreadPool somewhere, preferably at the beginning of tmain().
     ASSERT(s_instance.load(std::memory_order_relaxed) != nullptr);
     // In order to see the full construction of the AIThreadPool instance, we need to prohibit
     // reads done after this point from being reordered before this load, because that could

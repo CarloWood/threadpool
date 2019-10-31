@@ -48,7 +48,7 @@ std::atomic_int AIThreadPool::s_idle_threads = ATOMIC_VAR_INIT(0);
 AIThreadPool::Action AIThreadPool::s_call_update_current_timer CWDEBUG_ONLY(("\"Timer\""));
 
 //static
-void AIThreadPool::Worker::main(int const self)
+void AIThreadPool::Worker::tmain(int const self)
 {
 #ifdef CWDEBUG
   {
@@ -331,7 +331,7 @@ void AIThreadPool::add_threads(workers_t::wat& workers_w, int n)
   }
   int const current_number_of_threads = workers_w->size();
   for (int i = 0; i < n; ++i)
-    workers_w->emplace_back(&Worker::main, current_number_of_threads + i);
+    workers_w->emplace_back(&Worker::tmain, current_number_of_threads + i);
 }
 
 // This function is called inside a criticial area of m_workers_r_to_w_mutex
@@ -388,7 +388,7 @@ AIThreadPool::AIThreadPool(int number_of_threads, int max_number_of_threads) :
   // use AIThreadPool::instance() to access the thread pool created from main.
   assert(aithreadid::is_single_threaded(m_constructor_id));
 
-  // Only construct ONE AIThreadPool, preferably somewhere at the beginning of main().
+  // Only construct ONE AIThreadPool, preferably somewhere at the beginning of tmain().
   // If you want more than one thread pool instance, don't. One is enough and much
   // better than having two or more.
   assert(s_instance == nullptr);
@@ -401,6 +401,9 @@ AIThreadPool::AIThreadPool(int number_of_threads, int max_number_of_threads) :
                                                  // after destructing the first, this should be the case here.
   workers_w->reserve(m_max_number_of_threads);   // Attempt to avoid reallocating the vector in the future.
   add_threads(workers_w, number_of_threads);     // Create and run number_of_threads threads.
+
+  // Set a default value.
+  set_max_number_of_queues(8);
 }
 
 AIThreadPool::~AIThreadPool()

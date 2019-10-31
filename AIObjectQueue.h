@@ -169,6 +169,12 @@ class AIObjectQueue
   AIObjectQueue(AIObjectQueue&& rvalue) : m_start(rvalue.m_start), m_capacity(rvalue.m_capacity), m_head(0), m_tail(0)
   {
     // Should only ever move an AIObjectQueue directly after constructing it.
+    //
+    // If this fails while calling AIThreadPool::new_queue() then likely you are doing so after using
+    // a previously added queue (aka, you create one of more queues with new_queue, added a task to
+    // one or more and then call new_queue again) AND you went over the specified capacity of
+    // AIThreadPool::m_queues. You can increase the capacity by calling AIThreadPool::set_max_number_of_queues
+    // immediately after constructing the thread pool.
     ASSERT(rvalue.m_head == 0 && rvalue.m_tail == 0);
     // Make sure the rvalue's destructor won't deallocate.
     rvalue.m_capacity = 0;
