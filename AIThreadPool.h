@@ -620,7 +620,7 @@ class AIThreadPool
    */
   static AIThreadPool& instance()
   {
-    // Construct an AIThreadPool somewhere, preferably at the beginning of tmain().
+    // Construct an AIThreadPool somewhere, preferably at the beginning of main().
     ASSERT(s_instance.load(std::memory_order_relaxed) != nullptr);
     // In order to see the full construction of the AIThreadPool instance, we need to prohibit
     // reads done after this point from being reordered before this load, because that could

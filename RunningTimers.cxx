@@ -105,7 +105,7 @@ Timer::Handle RunningTimers::push(TimerQueueIndex interval, Timer* timer)
     if (is_current)
     {
       update_running_timer();
-      AIThreadPool::instance().call_update_current_timer();
+      AIThreadPool::call_update_current_timer();
     }
   }
   return handle;
