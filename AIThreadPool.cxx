@@ -411,7 +411,11 @@ AIThreadPool::~AIThreadPool()
   DoutEntering(dc::threadpool, "AIThreadPool::~AIThreadPool()");
 
 #ifdef SPINSEMAPHORE_STATS
+#ifdef CWDEBUG
   Dout(dc::semaphorestats, "AIThreadPool semaphore stats:\n" << print_using(&print_semaphore_stats_on));
+#else
+  std::cout << "AIThreadPool semaphore stats:\n" << utils::print_using(&print_semaphore_stats_on) << std::endl;
+#endif
 #endif
 
   // Construction and destruction is not thread-safe.

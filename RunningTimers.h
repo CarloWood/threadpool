@@ -189,7 +189,7 @@ class RunningTimers : public Singleton<RunningTimers>
   Timer* update_current_timer(current_t::wat& current_w, Timer::time_point now);
 
   sigset_t const* get_timer_sigset() const { return &m_timer_sigset; }
-  void set_a_timer_expired() { DEBUG_ONLY(bool prev_value) = m_a_timer_expired.exchange(true, std::memory_order_release); ASSERT(!prev_value); }
+  void set_a_timer_expired() { DEBUG_ONLY(bool prev_value =) m_a_timer_expired.exchange(true, std::memory_order_release); ASSERT(!prev_value); }
   bool test_and_clear_a_timer_expired() { return m_a_timer_expired.exchange(false, std::memory_order_acquire); }
 
   int to_cache_index(TimerQueueIndex index) const { return index.get_value(); }
