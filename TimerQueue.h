@@ -82,7 +82,7 @@ class TimerQueue
    * to check if a newly added timer expires sooner than what we're
    * currently waiting for.
    *
-   * @returns True if \a sequence is the value returned by a call to push() for a timer that is now at the front (will be returned by pop() next).
+   * @returns True if @a sequence is the value returned by a call to push() for a timer that is now at the front (will be returned by pop() next).
    */
   bool is_current(uint64_t sequence) const
   {
@@ -92,10 +92,10 @@ class TimerQueue
   /*!
    * @brief Cancel a running timer.
    *
-   * The \a sequence passed must be returned by a previous call to push() and may not have expired.
+   * The @a sequence passed must be returned by a previous call to push() and may not have expired.
    * This implies that the queue cannot be empty.
    *
-   * If this function returns true then the mutex \a m has been locked
+   * If this function returns true then the mutex @a m has been locked
    * and RunningTimers needs updating.
    *
    * @param sequence : The sequence number of a previously pushed timer.
@@ -140,7 +140,7 @@ class TimerQueue
    * This function may only be called when the queue is not empty.
    * The returned pointer will never be null.
    *
-   * Afterwards, the mutex \a m is locked.
+   * Afterwards, the mutex @a m is locked.
    *
    * @param m : A reference to RunningTimers::m_mutex.
    *

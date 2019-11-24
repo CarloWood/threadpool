@@ -64,9 +64,9 @@ struct Interval;
  * @brief A timer.
  *
  * Allows a callback to some <code>std::function<void()></code> that can
- * be specified during construction or while calling the \ref start member function.
+ * be specified during construction or while calling the @ref start member function.
  *
- * The \ref start member function must be passed an Interval object.
+ * The @ref start member function must be passed an Interval object.
  */
 class Timer
 {
@@ -87,7 +87,7 @@ class Timer
    *
    * A Timer::Interval can only be instantiated from a <code>threadpool::Interval<count, Unit></code>
    * and only after main() is already reached. Normally you just want to pass a
-   * <code>threadpool::Interval<count, Unit></code> directly to \ref start.
+   * <code>threadpool::Interval<count, Unit></code> directly to @ref start.
    */
   struct Interval
   {
@@ -106,7 +106,7 @@ class Timer
     //! A copy constructor is provided, but doesn't seem needed.
     Interval(Interval const& interval) : m_index(interval.m_index), m_duration(interval.m_duration) { DEBUG_ONLY(Timer::s_interval_constructed |= !m_index.undefined()); }
 
-    //! \internal For debugging purposes mainly.
+    //! @internal For debugging purposes mainly.
     time_point::duration duration() { return m_duration; }
   };
 
@@ -118,7 +118,7 @@ class Timer
     //! Default constructor. Construct a handle for a "not running timer".
     Handle() { }
 
-    //! Construct a Handle for a running timer with interval \a interval and number sequence \a sequence.
+    //! Construct a Handle for a running timer with interval @a interval and number sequence @a sequence.
     constexpr Handle(TimerQueueIndex interval, uint64_t sequence) : m_sequence(sequence), m_interval(interval) { }
 
     bool is_running() const { return !m_interval.undefined(); }

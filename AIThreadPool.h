@@ -117,8 +117,8 @@ NAMESPACE_DEBUG_CHANNELS_END
  *   } // Release read access to AIThreadPool::m_queues so another thread can use AIThreadPool::new_queue again.
  * @endcode
  *
- * It is necessary to keep <code>AIThreadPool::m_queues</code> read locked \htmlonly&mdash;\endhtmlonly
- * by not destroying the object returned by \ref queues_read_access \htmlonly&mdash;\endhtmlonly
+ * It is necessary to keep <code>AIThreadPool::m_queues</code> read locked @htmlonly&mdash;\endhtmlonly
+ * by not destroying the object returned by @ref queues_read_access @htmlonly&mdash;\endhtmlonly
  * for as long as the write lock on the queue exists.
  * I.e., in the above code, the lifetime of <code>queues_access</code>
  * must exceed the lifetime of <code>queue_access</code>.
@@ -494,10 +494,10 @@ class AIThreadPool
 
  public:
   /*!
-   * Construct an AIThreadPool with \a number_of_threads number of threads.
+   * Construct an AIThreadPool with @a number_of_threads number of threads.
    *
    * @param number_of_threads The initial number of worker threads in this pool.
-   * @param max_number_of_threads The largest value that you expect to pass to \ref change_number_of_threads_to during the execution of the program.
+   * @param max_number_of_threads The largest value that you expect to pass to @ref change_number_of_threads_to during the execution of the program.
    */
   AIThreadPool(int number_of_threads = std::thread::hardware_concurrency() - 2, int max_number_of_threads = std::thread::hardware_concurrency());
 
@@ -553,7 +553,7 @@ class AIThreadPool
   //------------------------------------------------------------------------
   // Queue management.
 
-  //! Lock m_queues and get access (return value is to be passed to \ref get_queue).
+  //! Lock m_queues and get access (return value is to be passed to @ref get_queue).
   AIThreadPool::queues_t::rat queues_read_access() { return static_cast<AIThreadPool::queues_t::rat>(m_queues); }
 
   /*!
@@ -564,9 +564,9 @@ class AIThreadPool
    *
    * The new queue is of a lower priority than all previously created queues.
    * The priority is determined by two things: the order in which queues are
-   * searched for new tasks and the fact that \a reserved_threads threads
+   * searched for new tasks and the fact that @a reserved_threads threads
    * won't work on tasks of a lower priority (if any). Hence, passing a value
-   * of zero to \a reserved_threads only has influence on the order in which
+   * of zero to @a reserved_threads only has influence on the order in which
    * the tasks are processed, while using a larger value reduces the number
    * of threads that will work on lower priority tasks.
    *
@@ -575,10 +575,10 @@ class AIThreadPool
   AIQueueHandle new_queue(int capacity, int reserved_threads = 1);
 
   /*!
-   * @brief Return a reference to the queue that belongs to \a queue_handle.
+   * @brief Return a reference to the queue that belongs to @a queue_handle.
    *
    * The returned pointer is only valid until a new queue is requested, which
-   * is blocked only as long as \a queues_r isn't destructed: keep the read-access
+   * is blocked only as long as @a queues_r isn't destructed: keep the read-access
    * object around until the returned reference is no longer used.
    *
    * Note that despite using a Read Access Type (rat) this function returns
@@ -586,8 +586,8 @@ class AIThreadPool
    * interpreted as "may be accessed by an arbitrary number of threads at the
    * same time".
    *
-   * @param queues_r The read-lock object as returned by \ref queues_read_access.
-   * @param queue_handle An AIQueueHandle as returned by \ref new_queue.
+   * @param queues_r The read-lock object as returned by @ref queues_read_access.
+   * @param queue_handle An AIQueueHandle as returned by @ref new_queue.
    *
    * @returns A reference to AIThreadPool::PriorityQueue.
    */

@@ -173,7 +173,7 @@ class RunningTimers : public Singleton<RunningTimers>
    * This function may only be called when current_w->need_update is
    * set and current_w->timer is not set.
    *
-   * If there is a running Timer that has expired at or before \a now,
+   * If there is a running Timer that has expired at or before @a now,
    * then current_w->need_update and current_w->timer are left set and
    * unset respectively and the expired Timer is returned.
    * Call Timer::expire on the returned Timer in that case.
@@ -244,7 +244,7 @@ class RunningTimers : public Singleton<RunningTimers>
       update_running_timer();
   }
 
-  // Add \a timer to the list of running timers, using \a interval as timeout.
+  // Add @a timer to the list of running timers, using @a interval as timeout.
   Timer::Handle push(TimerQueueIndex interval, Timer* timer);
 
   void initialize(size_t number_of_intervals)

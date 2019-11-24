@@ -66,7 +66,7 @@
 //! } // Unlock the queue.
 //! @endcode
 /*!
- * The value of \c length allows one to do client-side
+ * The value of @c length allows one to do client-side
  * bandwidth control; by reducing the throughput till
  * the returned length is as small as possible one can
  * reduce the latency.
@@ -90,10 +90,10 @@
  * Here the actual length might be greater than the
  * returned value because producer threads can still
  * write to the queue while we hold the consumer lock.
- * In fact, both calls to \c length() do essentially the same
+ * In fact, both calls to @c length() do essentially the same
  * calculation (which doesn't require locking at all to be
  * thread-safe); the only difference is the memory model
- * used for access, but the locking by accessing \c length()
+ * used for access, but the locking by accessing @c length()
  * through the respective access objects is necessary to
  * prevent a producer thread having a race condition with
  * another producer thread, or a consumer thread having a
@@ -102,7 +102,7 @@
  * <h3>const qualifier and %AIObjectQueue&lt;T&gt;</h3>
  *
  * Essentially, an %AIObjectQueue only allows one to move
- * objects of type \c T into and out of the queue;
+ * objects of type @c T into and out of the queue;
  * it doesn't have accessors.
  * Consequently none of its member functions is const.
  *
@@ -112,7 +112,7 @@
  * concurrently by multiple threads.
  *
  * Specifically, producer_access() and consumer_access(),
- * although \c const, <em>do</em> allow respectively writing data into \htmlonly&dash;\endhtmlonly
+ * although @c const, <em>do</em> allow respectively writing data into @htmlonly&dash;\endhtmlonly
  * and extracting data from the queue. Their const-ness merely means that concurrent
  * access is thread safe.
  */
@@ -162,7 +162,7 @@ class AIObjectQueue
   //! Construct a buffer with size zero.
   AIObjectQueue() : m_start(nullptr), m_capacity(0), m_head(0), m_tail(0) { }
 
-  //! Construct a buffer with a capacity of \a capacity objects of type \c T.
+  //! Construct a buffer with a capacity of @a capacity objects of type @c T.
   AIObjectQueue(int capacity) : m_start(nullptr), m_capacity(0), m_head(0), m_tail(0) { allocate_(capacity); }
 
   //! Move constructor. Only use this directly after constructing (if at all).
@@ -305,7 +305,7 @@ class AIObjectQueue
    * @brief Change the capacity of the buffer.
    *
    * This function will deadlock when used by a thread that still has
-   * the return type of a call to \c producer_access() or \c consumer_access()
+   * the return type of a call to @c producer_access() or @c consumer_access()
    * around.
    *
    * This blocks all producers and consumers from using the buffer while
@@ -313,7 +313,7 @@ class AIObjectQueue
    * destructive to all objects still in the buffer. Hence this function really
    * only should be used while it is empty and not in use at all.
    *
-   * @param capacity The new queue capacity in number of objects of type \c T.
+   * @param capacity The new queue capacity in number of objects of type @c T.
    */
   void reallocate(int capacity)
   {
@@ -348,7 +348,7 @@ class AIObjectQueue
     int length() const { return m_buffer->producer_length(); }
 
     /*!
-     * @brief Write an object into the buffer by means of \c std::move.
+     * @brief Write an object into the buffer by means of @c std::move.
      *
      * @param object The object to move into the buffer.
      */
@@ -414,7 +414,7 @@ class AIObjectQueue
 
     int length() const { return m_buffer->consumer_length(); }
     /*!
-     * @brief Read an object from the buffer by means of \c std::move.
+     * @brief Read an object from the buffer by means of @c std::move.
      *
      * @returns The read object.
      */
