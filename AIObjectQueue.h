@@ -39,8 +39,8 @@
 #include <condition_variable>
 
 
-/*!
- * @brief A ring buffer for moveable objects.
+/**
+ * A ring buffer for moveable objects.
  *
  * Usage (using for example <code>std::function&lt;void()&gt;</code>):
  *
@@ -55,17 +55,17 @@
  * The space for the nineth object is reserved to
  * store the last object that was already read from
  * the queue but wasn't popped yet.
- */
-//! @code
-//! // Producer threads:
-//! { // Lock the queue for other producer threads.
-//!   auto access = queue.producer_access();
-//!   int length = access.length();
-//!   if (length == capacity) { /* Buffer full */ return; }
-//!   access.move_in([](){ std::cout << "Hello\n"; });
-//! } // Unlock the queue.
-//! @endcode
-/*!
+ *
+ * @code
+ * // Producer threads:
+ * { // Lock the queue for other producer threads.
+ *   auto access = queue.producer_access();
+ *   int length = access.length();
+ *   if (length == capacity) { /\* Buffer full *\/ return; }
+ *   access.move_in([](){ std::cout << "Hello\n"; });
+ * } // Unlock the queue.
+ * @endcode
+ *
  * The value of @c length allows one to do client-side
  * bandwidth control; by reducing the throughput till
  * the returned length is as small as possible one can
@@ -74,19 +74,19 @@
  * Note that due to race conditions, the actual length
  * might be less, as consumer threads can read from the
  * queue while we hold the producer lock.
- */
-//! @code
-//! // Consumer threads:
-//! std::function<void()> f;
-//! { // Lock the queue for other consumer threads.
-//!   auto access = queue.consumer_access();
-//!   int length = access.length();
-//!   if (length == 0) { /* Buffer empty */ return; }
-//!   f = access.move_out();
-//! } // Unlock the queue.
-//! f(); // Invoke the functor.
-//! @endcode
-/*!
+ * 
+ * @code
+ * // Consumer threads:
+ * std::function<void()> f;
+ * { // Lock the queue for other consumer threads.
+ *   auto access = queue.consumer_access();
+ *   int length = access.length();
+ *   if (length == 0) { /\* Buffer empty *\/ return; }
+ *   f = access.move_out();
+ * } // Unlock the queue.
+ * f(); // Invoke the functor.
+ * @endcode
+ *
  * Here the actual length might be greater than the
  * returned value because producer threads can still
  * write to the queue while we hold the consumer lock.
@@ -155,17 +155,17 @@ class AIObjectQueue
   std::condition_variable m_buffer_full;        // Uses mutex m_producer_mutex. Used to wait until the buffer is not full anymore.
 
  public:
-  //! Buffer storage alignment. Align the buffer at a multiple of the L1 cache line size.
+  /// Buffer storage alignment. Align the buffer at a multiple of the L1 cache line size.
   static constexpr size_t alignment = (alignof(T) < 64) ? (size_t)64 : alignof(T);
 
  public:
-  //! Construct a buffer with size zero.
+  /// Construct a buffer with size zero.
   AIObjectQueue() : m_start(nullptr), m_capacity(0), m_head(0), m_tail(0) { }
 
-  //! Construct a buffer with a capacity of @a capacity objects of type @c T.
+  /// Construct a buffer with a capacity of @a capacity objects of type @c T.
   AIObjectQueue(int capacity) : m_start(nullptr), m_capacity(0), m_head(0), m_tail(0) { allocate_(capacity); }
 
-  //! Move constructor. Only use this directly after constructing (if at all).
+  /// Move constructor. Only use this directly after constructing (if at all).
   AIObjectQueue(AIObjectQueue&& rvalue) : m_start(rvalue.m_start), m_capacity(rvalue.m_capacity), m_head(0), m_tail(0)
   {
     // Should only ever move an AIObjectQueue directly after constructing it.
@@ -180,10 +180,10 @@ class AIObjectQueue
     rvalue.m_capacity = 0;
   }
 
-  //! Destructor -- frees allocated memory.
+  /// Destructor -- frees allocated memory.
   ~AIObjectQueue() { if (m_capacity) deallocate_(); }
 
-  //! Returns the current capacity of the buffer.
+  /// Returns the current capacity of the buffer.
   int capacity() const { return m_capacity; }
 
  private:
@@ -301,8 +301,8 @@ class AIObjectQueue
   //-------------------------------------------------------------------------
 
  public:
-  /*!
-   * @brief Change the capacity of the buffer.
+  /**
+   * Change the capacity of the buffer.
    *
    * This function will deadlock when used by a thread that still has
    * the return type of a call to @c producer_access() or @c consumer_access()
@@ -325,21 +325,21 @@ class AIObjectQueue
     allocate_(capacity);
   }
 
-  //! The return type of producer_access().
+  /// The return type of producer_access().
   struct ProducerAccess
   {
    private:
     AIObjectQueue<T>* m_buffer;
 
    public:
-    //! Constructor.
+    /// Constructor.
     ProducerAccess(AIObjectQueue<T>* buffer) : m_buffer(buffer) { buffer->m_producer_mutex.lock(); }
 
-    //! Destructor.
+    /// Destructor.
     ~ProducerAccess() { m_buffer->m_producer_mutex.unlock(); }
 
-    /*!
-     * @brief Return the current length of the buffer.
+    /**
+     * Return the current length of the buffer.
      *
      * This is the number of objects stored in the buffer.
      * If the returned value equals the capacity of the buffer
@@ -347,15 +347,15 @@ class AIObjectQueue
      */
     int length() const { return m_buffer->producer_length(); }
 
-    /*!
-     * @brief Write an object into the buffer by means of @c std::move.
+    /**
+     * Write an object into the buffer by means of @c std::move.
      *
      * @param object The object to move into the buffer.
      */
     void move_in(T&& object) { m_buffer->move_in(std::move(object)); }
 
-    /*!
-     * @brief Unlock producer access and wait.
+    /**
+     * Unlock producer access and wait.
      *
      * Waits until the buffer is not full anymore.
      */
@@ -367,9 +367,7 @@ class AIObjectQueue
       Dout(dc::notice, "Returning from ProducerAccess::wait()");
     }
 
-    /*!
-     * @brief Wake up thread waiting to write to the buffer.
-     */
+    /// Wake up thread waiting to write to the buffer.
     void notify_one()
     {
       DoutEntering(dc::notice, "ProducerAccess::notify_one()");
@@ -377,8 +375,8 @@ class AIObjectQueue
       m_buffer->m_buffer_full.notify_one();
     }
 
-    /*!
-     * @brief Clear the buffer by putting the head where the tail is.
+    /**
+     * Clear the buffer by putting the head where the tail is.
      *
      * Artificially stop all consumers from reading this buffer
      * by faking that it is now empty.
@@ -393,35 +391,36 @@ class AIObjectQueue
     void clear() { m_buffer->m_head.store(m_buffer->m_tail.load(std::memory_order_relaxed), std::memory_order_relaxed); }
   };
 
-  //! The return type of consumer_access().
+  /// The return type of consumer_access().
   struct ConsumerAccess
   {
    private:
     AIObjectQueue<T>* m_buffer;
 
    public:
-    //! Constructor.
+    /// Constructor.
     ConsumerAccess(AIObjectQueue<T>* buffer) : m_buffer(buffer) { buffer->m_consumer_mutex.lock(); }
 
-    //! Destructor.
+    /// Destructor.
     ~ConsumerAccess() { m_buffer->m_consumer_mutex.unlock(); }
-    /*!
-     * @brief Return the current length of the buffer.
+
+    /**
+     * Return the current length of the buffer.
      *
      * This is the number of objects available for reading.
      * If the returned value equals zero than the buffer is empty and one should not call move_out.
      */
-
     int length() const { return m_buffer->consumer_length(); }
-    /*!
-     * @brief Read an object from the buffer by means of @c std::move.
+
+    /**
+     * Read an object from the buffer by means of @c std::move.
      *
      * @returns The read object.
      */
-
     T move_out() { return m_buffer->move_out(); }
-    /*!
-     * @brief Clear the buffer by putting the tail where the head is.
+
+    /**
+     * Clear the buffer by putting the tail where the head is.
      *
      * Artificially stop all consumers from reading this buffer
      * by faking that it is now empty.
@@ -433,19 +432,18 @@ class AIObjectQueue
      * destructor is always only called once the buffer is
      * destructed or reallocate() is called).
      */
-
     void clear() { m_buffer->m_tail.store(m_buffer->m_head.load(std::memory_order_relaxed), std::memory_order_relaxed); }
   };
 
-  /*!
-   * @brief Obtain exclusive producer access to the buffer.
+  /**
+   * Obtain exclusive producer access to the buffer.
    *
    * @returns A ProducerAccess object.
    */
   ProducerAccess producer_access() const { return ProducerAccess(const_cast<AIObjectQueue<T>*>(this)); }
 
-  /*!
-   * @brief Obtain exclusive consumer access to the buffer.
+  /**
+   * Obtain exclusive consumer access to the buffer.
    *
    * @returns A ConsumerAccess object.
    */

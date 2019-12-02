@@ -169,7 +169,7 @@ class RunningTimers : public Singleton<RunningTimers>
   // Return access type for m_current.
   current_t::wat access_current() { return static_cast<current_t::wat>(m_current); }
 
-  /*!
+  /**
    * This function may only be called when current_w->need_update is
    * set and current_w->timer is not set.
    *
@@ -195,7 +195,7 @@ class RunningTimers : public Singleton<RunningTimers>
   int to_cache_index(TimerQueueIndex index) const { return index.get_value(); }
   TimerQueueIndex to_queues_index(int index) const { return TimerQueueIndex(index); }
 
-  //! Cancel the timer associated with handle.
+  /// Cancel the timer associated with handle.
   void cancel(Timer::Handle const& handle)
   {
     DoutEntering(dc::notice, "RunningTimers::cancel(" << &handle << ")");

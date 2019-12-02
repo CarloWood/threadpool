@@ -31,5 +31,5 @@ struct QueueHandle;	// Ordering category of AIQueueHandle;
 } // namespace ordering_category
 #endif
 
-//! The type of a queue handle as returned by AIThreadPool::new_queue.
+/// The type of a queue handle as returned by AIThreadPool::new_queue.
 using AIQueueHandle = utils::VectorIndex<ordering_category::QueueHandle>;

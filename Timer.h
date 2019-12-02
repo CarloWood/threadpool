@@ -43,7 +43,7 @@ struct TimerQueue;	// Ordering category of TimerQueue;
 } // namespace ordering_category
 #endif
 
-//! The type of an index into RunningTimers::m_queues.
+/// The type of an index into RunningTimers::m_queues.
 using TimerQueueIndex = utils::VectorIndex<ordering_category::TimerQueue>;
 
 class TimerQueue;
@@ -60,8 +60,8 @@ struct TimerTypes
 template<TimerTypes::time_point::rep count, typename Unit>
 struct Interval;
 
-/*!
- * @brief A timer.
+/**
+ * A timer.
  *
  * Allows a callback to some <code>std::function<void()></code> that can
  * be specified during construction or while calling the @ref start member function.
@@ -71,8 +71,8 @@ struct Interval;
 class Timer
 {
  public:
-  using clock_type = TimerTypes::clock_type;    //!< The underlaying clock type.
-  using time_point = TimerTypes::time_point;    //!< The underlaying time point.
+  using clock_type = TimerTypes::clock_type;    ///< The underlaying clock type.
+  using time_point = TimerTypes::time_point;    ///< The underlaying time point.
 
 #if CW_DEBUG && !defined(DOXYGEN)
   static bool s_interval_constructed;
@@ -82,8 +82,8 @@ class Timer
   // Use a value far in the future to represent 'no timer' (aka, a "timer" that will never expire).
   static time_point constexpr s_none{time_point::duration(std::numeric_limits<time_point::rep>::max())};
 
-  /*!
-   * @brief A timer interval.
+  /**
+   * A timer interval.
    *
    * A Timer::Interval can only be instantiated from a <code>threadpool::Interval<count, Unit></code>
    * and only after main() is already reached. Normally you just want to pass a
@@ -103,22 +103,22 @@ class Timer
     Interval() { }
 
    public:
-    //! A copy constructor is provided, but doesn't seem needed.
+    /// A copy constructor is provided, but doesn't seem needed.
     Interval(Interval const& interval) : m_index(interval.m_index), m_duration(interval.m_duration) { DEBUG_ONLY(Timer::s_interval_constructed |= !m_index.undefined()); }
 
-    //! @internal For debugging purposes mainly.
+    /// @internal For debugging purposes mainly.
     time_point::duration duration() { return m_duration; }
   };
 
   struct Handle
   {
-    uint64_t m_sequence;        //!< A unique sequence number for Timer's with this interval. Only valid when running.
-    TimerQueueIndex m_interval; //!< Interval index is_undefined means 'not running'.
+    uint64_t m_sequence;        ///< A unique sequence number for Timer's with this interval. Only valid when running.
+    TimerQueueIndex m_interval; ///< Interval index is_undefined means 'not running'.
 
-    //! Default constructor. Construct a handle for a "not running timer".
+    /// Default constructor. Construct a handle for a "not running timer".
     Handle() { }
 
-    //! Construct a Handle for a running timer with interval @a interval and number sequence @a sequence.
+    /// Construct a Handle for a running timer with interval @a interval and number sequence @a sequence.
     constexpr Handle(TimerQueueIndex interval, uint64_t sequence) : m_sequence(sequence), m_interval(interval) { }
 
     bool is_running() const { return !m_interval.undefined(); }
@@ -129,47 +129,47 @@ class Timer
 #endif
 
  private:
-  Handle m_handle;                      //!< If m_handle.is_running() returns true then this timer is running
-                                        //   and m_handle can be used to find the corresponding Timer object.
-  time_point m_expiration_point;        //!< The time at which we should expire (only valid when this is a running timer).
-  std::function<void()> m_call_back;    //!< The callback function (only valid when this is a running timer).
+  Handle m_handle;                      ///< If m_handle.is_running() returns true then this timer is running
+                                        ///  and m_handle can be used to find the corresponding Timer object.
+  time_point m_expiration_point;        ///< The time at which we should expire (only valid when this is a running timer).
+  std::function<void()> m_call_back;    ///< The callback function (only valid when this is a running timer).
 
  public:
   Timer() = default;
   Timer(std::function<void()> call_back) : m_call_back(call_back) { }
 
-  //! Destruct the timer. If it is (still) running, stop it.
+  /// Destruct the timer. If it is (still) running, stop it.
   ~Timer() { stop(); }
 
-  //! Start this timer providing a (new) call back function.
+  /// Start this timer providing a (new) call back function.
   void start(Interval interval, std::function<void()> call_back, time_point now);
 
-  //! Convenience function that calls clock_type::now() for you.
+  /// Convenience function that calls clock_type::now() for you.
   void start(Interval interval, std::function<void()> call_back) { start(interval, call_back, clock_type::now()); }
 
-  //! Start this timer using a previously assigned call back function.
+  /// Start this timer using a previously assigned call back function.
   void start(Interval interval, time_point now);
 
-  //! Convenience function that calls clock_type::now() for you.
+  /// Convenience function that calls clock_type::now() for you.
   void start(Interval interval) { start(interval, clock_type::now()); }
 
-  //! Stop this timer if it is (still) running.
+  /// Stop this timer if it is (still) running.
   void stop();
 
-  //! Called when this timer expires.
+  /// Called when this timer expires.
   void expire()
   {
     m_handle.set_not_running();
     m_call_back();
   }
 
-  //! Called when this timer is removed from the queue.
+  /// Called when this timer is removed from the queue.
   void removed()
   {
     m_handle.set_removed();
   }
 
-  //! Call this to reset the call back function, destructing any possible objects that it might contain.
+  /// Call this to reset the call back function, destructing any possible objects that it might contain.
   void release_callback()
   {
     // Don't call release_callback while the timer is running.
@@ -189,10 +189,10 @@ class Timer
  public:
   // Accessors.
 
-  //! Return the handle of this timer.
+  /// Return the handle of this timer.
   Handle handle() const { return m_handle; }
 
-  //! Return the point at which this timer will expire. Only valid when is_running.
+  /// Return the point at which this timer will expire. Only valid when is_running.
   time_point get_expiration_point() const { return m_expiration_point; }
 };
 

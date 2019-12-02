@@ -32,8 +32,8 @@ namespace threadpool {
 
 class RunningTimers;
 
-/*!
- * @brief A queue of running (possibly cancelled) timers, all of the same interval.
+/**
+ * A queue of running (possibly cancelled) timers, all of the same interval.
  *
  * This queue stores Timer*'s. Each Timer will have the same interval (which interval
  * that is depends on the context in which the TimerQueue was found). If a pointer
@@ -52,11 +52,11 @@ class TimerQueue
   running_timers_type m_running_timers;         // All running timers for the related interval.
 
  public:
-  //! Construct an empty queue.
+  /// Construct an empty queue.
   TimerQueue() : m_sequence_offset(0) { }
 
-  /*!
-   * @brief Add a new timer to the end of the queue.
+  /**
+   * Add a new timer to the end of the queue.
    *
    * The TimerQueue must be locked before calling push(), and
    * without releasing that lock the result should be passed
@@ -75,8 +75,8 @@ class TimerQueue
     return size + m_sequence_offset;
   }
 
-  /*!
-   * @brief Check if a timer is current.
+  /**
+   * Check if a timer is current.
    *
    * This function might need to be called after calling push, in order
    * to check if a newly added timer expires sooner than what we're
@@ -89,8 +89,8 @@ class TimerQueue
     return sequence == m_sequence_offset;
   }
 
-  /*!
-   * @brief Cancel a running timer.
+  /**
+   * Cancel a running timer.
    *
    * The @a sequence passed must be returned by a previous call to push() and may not have expired.
    * This implies that the queue cannot be empty.
@@ -118,8 +118,8 @@ class TimerQueue
     return is_current;
   }
 
-  /*!
-   * @brief Return the timer at the front of the queue.
+  /**
+   * Return the timer at the front of the queue.
    *
    * This function may only be called when the queue is not empty.
    * RunningTimers::m_mutex must be locked before calling this function.
@@ -134,8 +134,8 @@ class TimerQueue
     return m_running_timers.front();
   }
 
-  /*!
-   * @brief Remove one timer from the front of the queue and return it.
+  /**
+   * Remove one timer from the front of the queue and return it.
    *
    * This function may only be called when the queue is not empty.
    * The returned pointer will never be null.
@@ -173,8 +173,8 @@ class TimerQueue
     return timer;
   }
 
-  /*!
-   * @brief Return the next time point at which a timer of this interval will expire.
+  /**
+   * Return the next time point at which a timer of this interval will expire.
    *
    * This function returns Timer::none if the queue is empty.
    * This makes it suitable to be passed to increase_cache.

@@ -53,7 +53,7 @@ extern channel_ct threadpool;
 NAMESPACE_DEBUG_CHANNELS_END
 #endif
 
-/*!
+/**
  * @brief The thread pool class.
  *
  * Only one AIThreadPool may exist at a time; and can subsequently be
@@ -297,8 +297,8 @@ class AIThreadPool
     void increment_active_workers() const { const_cast<std::atomic_int&>(m_available_workers).fetch_add(1, std::memory_order_relaxed); }
     int get_total_reserved_threads() const { return m_total_reserved_threads; }
 
-    /*!
-     * @brief Wake up one thread to process the just added function, if needed.
+    /**
+     * Wake up one thread to process the just added function, if needed.
      *
      * When the threads of the thread pool have nothing to do, they go to
      * sleep by waiting on a semaphore. Call this function every time a new
@@ -319,8 +319,8 @@ class AIThreadPool
       m_execute_task.still_required();
     }
 
-    /*!
-     * @brief If a task is available then take ownership.
+    /**
+     * If a task is available then take ownership.
      *
      * If this function returns true then the current thread is responsible
      * for executing one task from the queue.
@@ -480,7 +480,7 @@ class AIThreadPool
   void remove_threads(workers_t::rat& workers_r, int n);
 
  public:
-  //! The container type in which the queues are stored.
+  /// The container type in which the queues are stored.
   using queues_container_t = utils::Vector<PriorityQueue, AIQueueHandle>;
 
  private:
@@ -493,7 +493,7 @@ class AIThreadPool
   bool m_pillaged;                                            // If true, this object was moved and the destructor should do nothing.
 
  public:
-  /*!
+  /**
    * Construct an AIThreadPool with @a number_of_threads number of threads.
    *
    * @param number_of_threads The initial number of worker threads in this pool.
@@ -501,11 +501,11 @@ class AIThreadPool
    */
   AIThreadPool(int number_of_threads = std::thread::hardware_concurrency() - 2, int max_number_of_threads = std::thread::hardware_concurrency());
 
-  //! Copying is not possible.
+  /// Copying is not possible.
   AIThreadPool(AIThreadPool const&) = delete;
 
-  /*!
-   * @brief Move constructor.
+  /**
+   * Move constructor.
    *
    * The move constructor is not thread-safe. Usage is only intended to be used
    * directly after creation of the AIThreadPool, by the thread that created it,
@@ -530,14 +530,14 @@ class AIThreadPool
     s_instance.store(this, std::memory_order_release);
   }
 
-  //! Destructor terminates all threads and joins them.
+  /// Destructor terminates all threads and joins them.
   ~AIThreadPool();
 
   //------------------------------------------------------------------------
   // Threads management.
 
-  /*!
-   * @brief Change the number of threads.
+  /**
+   * Change the number of threads.
    *
    * You bought more cores and updated it while running your program.
    *
@@ -545,19 +545,17 @@ class AIThreadPool
    */
   void change_number_of_threads_to(int number_of_threads);
 
-  /*!
-   * @brief Return the number of worker threads.
-   */
+  /// Return the number of worker threads.
   int number_of_workers() const { return workers_t::crat(m_workers)->size(); }
 
   //------------------------------------------------------------------------
   // Queue management.
 
-  //! Lock m_queues and get access (return value is to be passed to @ref get_queue).
+  /// Lock m_queues and get access (return value is to be passed to @ref get_queue).
   AIThreadPool::queues_t::rat queues_read_access() { return static_cast<AIThreadPool::queues_t::rat>(m_queues); }
 
-  /*!
-   * @brief Create a new queue.
+  /**
+   * Create a new queue.
    *
    * @param capacity The capacity of the new queue.
    * @param reserved_threads The number of threads that are rather idle than work on lower priority queues.
@@ -574,8 +572,8 @@ class AIThreadPool
    */
   AIQueueHandle new_queue(int capacity, int reserved_threads = 1);
 
-  /*!
-   * @brief Return a reference to the queue that belongs to @a queue_handle.
+  /**
+   * Return a reference to the queue that belongs to @a queue_handle.
    *
    * The returned pointer is only valid until a new queue is requested, which
    * is blocked only as long as @a queues_r isn't destructed: keep the read-access
@@ -593,16 +591,17 @@ class AIThreadPool
    */
   queues_container_t::value_type const& get_queue(queues_t::rat& queues_r, AIQueueHandle queue_handle) { return queues_r->at(queue_handle); }
 
-  /*!
-   * @brief Change the maximum number of thread pool task queues.
+  /**
+   * Change the maximum number of thread pool task queues.
    *
    * This member function must be called immediately after constructing the AIThreadPool.
    * The default is 8.
    */
   void set_max_number_of_queues(size_t max_number_of_queues) { queues_t::wat(m_queues)->reserve(max_number_of_queues); }
 
-  /*!
-   * @brief Cause a call to RunningTimers::update_current_timer() (possibly by another thread).
+  /**
+   * Cause a call to RunningTimers::update_current_timer() (possibly by another thread).
+   *
    * Called from the timer signal handler.
    */
   static void call_update_current_timer()
@@ -613,8 +612,8 @@ class AIThreadPool
 
   //------------------------------------------------------------------------
 
-  /*!
-   * @brief Obtain a reference to the thread pool.
+  /**
+   * Obtain a reference to the thread pool.
    *
    * Use this in threads that did not create the thread pool.
    */
