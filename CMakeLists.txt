@@ -58,15 +58,8 @@ target_link_libraries( threadpool_ObjLib
     INTERFACE
         ${RT_LIBRARY} 
     PUBLIC
-        Threads::Threads
+        AICxx::threadsafe
 )
-
-if ( OptionEnableLibcwd )
-  target_link_libraries( threadpool_ObjLib
-      PUBLIC
-          PkgConfig::Libcwd_r
-)
-endif ()
 
 # Create an ALIAS target.
 add_library( AICxx::threadpool ALIAS threadpool_ObjLib )
