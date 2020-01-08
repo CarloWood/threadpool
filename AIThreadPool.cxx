@@ -342,6 +342,9 @@ void AIThreadPool::add_threads(workers_t::wat& workers_w, int n)
 // so we may convert the read lock to a write lock.
 void AIThreadPool::remove_threads(workers_t::rat& workers_r, int n)
 {
+  if (n == 0)
+    return;
+
   DoutEntering(dc::threadpool, "remove_threads(" << n << ")");
   {
     queues_t::wat queues_w(m_queues);
