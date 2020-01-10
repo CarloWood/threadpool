@@ -6,7 +6,7 @@ providing a thread pool.
 * AIThreadPool
 * AIObjectQueue
 
-## Usage of the submodule.
+## Usage of the submodule
 
 Please read [this document](https://github.com/CarloWood/cwm4/blob/master/README_usage.md) for general information
 on how to use cwm4 submodules.
