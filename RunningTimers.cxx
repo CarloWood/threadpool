@@ -203,7 +203,7 @@ Timer* RunningTimers::update_current_timer(current_t::wat& current_w, Timer::tim
 
 RunningTimers::~RunningTimers()
 {
-  DoutEntering(dc::notice, "RunningTimers::~RunningTimers() with m_queues.size() == " << m_queues.size());
+  DoutEntering(dc::notice(m_queues.size() > 0), "RunningTimers::~RunningTimers() with m_queues.size() == " << m_queues.size());
   // Set all timers to 'not running', otherwise they call cancel() on us when they're being destructed.
   for (TimerQueueIndex interval = m_queues.ibegin(); interval != m_queues.iend(); ++interval)
     timer_queue_t::wat(m_queues[interval])->set_not_running();
