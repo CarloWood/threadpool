@@ -213,8 +213,8 @@ void AIThreadPool::Worker::tmain(int const self)
         }
         catch (AIAlert::Error const& error)
         {
-          Dout(dc::warning, error);
-          // FIXME: Not sure what to do here.
+          // We should never get here. This exception must be catch-ed sooner and be handled.
+          DoutFatal(dc::core, error);
           active = false;
         }
 
