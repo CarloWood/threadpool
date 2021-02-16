@@ -33,8 +33,8 @@
 #include "utils/AISignals.h"
 #include "utils/AIAlert.h"
 #include "utils/macros.h"
-#ifdef CWDEBUG
 #include "utils/debug_ostream_operators.h"
+#ifdef CWDEBUG
 #include <libcwd/type_info.h>
 #include <iomanip>
 #endif
