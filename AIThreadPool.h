@@ -49,6 +49,9 @@
 #ifdef SPINSEMAPHORE_STATS
 #include <iomanip>
 #endif
+#ifdef CWDEBUG
+#include "utils/ColorPool.h"
+#endif
 
 #if defined(CWDEBUG) && !defined(DOXYGEN)
 NAMESPACE_DEBUG_CHANNELS_START
@@ -392,6 +395,14 @@ class AIThreadPool
     mutable std::thread m_thread;
 #ifdef CWDEBUG
     std::thread::native_handle_type m_thread_id;
+
+    void set_color(int color) const
+    {
+      std::string color_on_str = AIThreadPool::instance().m_color2code_on(color);
+      std::string color_off_str = AIThreadPool::instance().m_color2code_off(color);
+      libcwd::libcw_do.color_on().assign(color_on_str.c_str(), color_on_str.size());
+      libcwd::libcw_do.color_off().assign(color_off_str.c_str(), color_off_str.size());
+    }
 #endif
 
     // Construct a new Worker; do not associate it with a running thread yet.
@@ -407,7 +418,7 @@ class AIThreadPool
     // That means that at the moment the move constuctor is called we have the exclusive
     // write lock on the vector and therefore no other thread can access this Worker.
     // It is therefore safe to simply copy m_quit.
-    Worker(Worker&& rvalue) : m_thread(std::move(rvalue.m_thread))
+    Worker(Worker&& rvalue) : m_thread(std::move(rvalue.m_thread)) COMMA_CWDEBUG_ONLY(m_thread_id(m_thread.native_handle()))
     {
       quit_t::wat quit_w(m_quit);
       quit_t::rat rvalue_quit_w(rvalue.m_quit);
@@ -488,13 +499,20 @@ class AIThreadPool
   using queues_container_t = utils::Vector<PriorityQueue, AIQueueHandle>;
 
  private:
-  static std::atomic<AIThreadPool*> s_instance;               // The only instance of AIThreadPool that should exist at a time.
+  static std::atomic<AIThreadPool*> s_instance;         // The only instance of AIThreadPool that should exist at a time.
   // m_queues is seldom write locked and very often read locked, so use AIReadWriteSpinLock.
   using queues_t = aithreadsafe::Wrapper<queues_container_t, aithreadsafe::policy::ReadWrite<AIReadWriteSpinLock>>;
-  queues_t m_queues;                                          // Vector of PriorityQueue`s.
-  std::thread::id m_constructor_id;                           // Thread id of the thread that created and/or moved AIThreadPool.
-  int m_max_number_of_threads;                                // Current capacity of m_workers.
-  bool m_pillaged;                                            // If true, this object was moved and the destructor should do nothing.
+  queues_t m_queues;                                    // Vector of PriorityQueue`s.
+  std::thread::id m_constructor_id;                     // Thread id of the thread that created and/or moved AIThreadPool.
+  int m_max_number_of_threads;                          // Current capacity of m_workers.
+  bool m_pillaged;                                      // If true, this object was moved and the destructor should do nothing.
+#ifdef CWDEBUG
+  static constexpr int number_of_colors = 5;            // We have 8 colors, but can't use the background color and have to reserve two colors for the main thread and EventLoopThread.
+  using color_pool_type = aithreadsafe::Wrapper<utils::ColorPool<number_of_colors>, aithreadsafe::policy::Primitive<std::mutex>>;
+  color_pool_type m_color_pool;
+  std::function<std::string(int)> m_color2code_on;      // Function that converts a color in the range [0, number_of_colors> to a terminal escape string to turn that color on.
+  std::function<std::string(int)> m_color2code_off;     // Function that converts a color in the range [0, number_of_colors> to a terminal escape string to turn that color off.
+#endif
 
  public:
   /**
@@ -613,6 +631,29 @@ class AIThreadPool
     //write(1, "\nCalling s_call_update_current_timer.required()\n", 48);
     s_call_update_current_timer.required(1);
   }
+
+#ifdef CWDEBUG
+  // Color management.
+  void set_color_functions(std::function<std::string(int)> color2code_on, std::function<std::string(int)> color2code_off = [](int) -> std::string { return "\e[0m"; })
+  {
+    m_color2code_on = color2code_on;
+    m_color2code_off = color2code_off;
+  }
+
+  // Called by threadpool code.
+  void use_color(int color)
+  {
+    color_pool_type::wat color_pool_w(m_color_pool);
+    color_pool_w->use_color(color);
+  }
+
+  // Called by threadpool code.
+  int get_color()
+  {
+    color_pool_type::rat color_pool_r(m_color_pool);
+    return color_pool_r->get_color();
+  }
+#endif
 
   //------------------------------------------------------------------------
 

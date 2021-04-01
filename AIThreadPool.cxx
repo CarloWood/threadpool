@@ -307,6 +307,15 @@ void AIThreadPool::Worker::tmain(int const self)
 #ifdef SPINSEMAPHORE_STATS
       Action::s_woken_up.fetch_add(1, std::memory_order_relaxed);
 #endif
+#ifdef CWDEBUG
+      // Thread woke up, give its debug output a new color, if any.
+      if (thread_pool.m_color2code_on)
+      {
+        int color = thread_pool.get_color();
+        workers_t::rat(thread_pool.m_workers)->at(self).set_color(color);
+        thread_pool.use_color(color);
+      }
+#endif
       if (RunningTimers::instance().test_and_clear_a_timer_expired())
       {
         auto current_w{RunningTimers::instance().access_current()};
