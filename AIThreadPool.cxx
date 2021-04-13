@@ -30,7 +30,7 @@
 #include "AIThreadPool.h"
 #include "RunningTimers.h"
 #include "Timer.h"
-#include "utils/AISignals.h"
+#include "utils/Signals.h"
 #include "utils/AIAlert.h"
 #include "utils/macros.h"
 #include "utils/debug_ostream_operators.h"
@@ -64,7 +64,7 @@ void AIThreadPool::Worker::tmain(int const self)
   AIThreadPool& thread_pool{AIThreadPool::instance()};
 
   // Unblock the POSIX signals that are used by the timer.
-  utils::Signals::unblock(RunningTimers::instance().get_timer_sigset());
+  utils::Signal::unblock(RunningTimers::instance().get_timer_sigset());
 
   // Wait until we have at least one queue.
   int count = 0;
@@ -488,7 +488,7 @@ AIQueueHandle AIThreadPool::new_queue(int capacity, int reserved_threads)
 }
 
 //static
-aithreadsafe::SpinSemaphore AIThreadPool::Action::s_semaphore;
+utils::threading::SpinSemaphore AIThreadPool::Action::s_semaphore;
 
 #ifdef SPINSEMAPHORE_STATS
 //static

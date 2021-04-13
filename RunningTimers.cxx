@@ -29,7 +29,7 @@
 #include "RunningTimers.h"
 #include "AIThreadPool.h"
 #include "utils/macros.h"
-#include "utils/AISignals.h"
+#include "utils/Signals.h"
 #include <new>
 #include <cstring>
 
@@ -43,7 +43,7 @@ extern "C" void timer_signal_handler(int)
 
 namespace threadpool {
 
-RunningTimers::RunningTimers() : m_timer_signum(utils::Signals::reserve_and_next_rt_signum()), m_a_timer_expired(false)
+RunningTimers::RunningTimers() : m_timer_signum(utils::Signal::reserve_and_next_rt_signum()), m_a_timer_expired(false)
 {
   // Initialize m_cache and m_tree.
   for (int interval = 0; interval < tree_size; ++interval)
@@ -58,7 +58,7 @@ RunningTimers::RunningTimers() : m_timer_signum(utils::Signals::reserve_and_next
 
   // Call timer_signal_handler when the m_timer_signum signal is caught by a thread.
   //std::cerr << "m_timer_signum = " << m_timer_signum << std::endl;
-  utils::Signals::instance().register_callback(m_timer_signum, timer_signal_handler);
+  utils::Signal::instance().register_callback(m_timer_signum, timer_signal_handler);
   sigemptyset(&m_timer_sigset);
   sigaddset(&m_timer_sigset, m_timer_signum);
 }

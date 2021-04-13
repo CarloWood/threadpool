@@ -39,9 +39,9 @@
 #include "signal_safe_printf.h"
 #include "threadsafe/AIReadWriteMutex.h"
 #include "threadsafe/AIReadWriteSpinLock.h"
-#include "threadsafe/SpinSemaphore.h"
-#include "threadsafe/aithreadid.h"
 #include "threadsafe/aithreadsafe.h"
+#include "utils/threading/SpinSemaphore.h"
+#include "utils/threading/aithreadid.h"
 #include <thread>
 #include <atomic>
 #include <cassert>
@@ -150,7 +150,7 @@ class AIThreadPool
 
   class Action
   {
-    static aithreadsafe::SpinSemaphore s_semaphore;                     // Global semaphore to wake up all threads of the thread pool.
+    static utils::threading::SpinSemaphore s_semaphore;                     // Global semaphore to wake up all threads of the thread pool.
     std::atomic<uint64_t> m_skipped_required;                           // See constexpr below.
     static constexpr uint64_t required_mask = 0xffffffff;               // Mask for the bits that count the number of actions required for this specific Action.
     static constexpr uint64_t skipped_mask = 0xffffffff00000000UL;      // Mask for the bits that count the number of times wakeup_n(1) was skipped in required().
