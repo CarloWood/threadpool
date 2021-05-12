@@ -321,6 +321,7 @@ class AIObjectQueue
    */
   void reallocate(int capacity)
   {
+    DoutEntering(dc::notice, "AIObjectQueue<" << type_info_of<T>().demangled_name() << ">::reallocate(" << capacity << ")");
     // Buffer may not be in use (these locks also protect access to the buffer itself).
     std::lock_guard<std::mutex> lock1(m_producer_mutex);
     std::lock_guard<std::mutex> lock2(m_consumer_mutex);
@@ -366,8 +367,11 @@ class AIObjectQueue
     void wait()
     {
       DoutEntering(dc::warning, "ProducerAccess::wait()");
+      // The lock is already locked when entering, so adopt it.
       std::unique_lock<std::mutex> lock(m_buffer->m_producer_mutex, std::adopt_lock);
       m_buffer->m_buffer_full.wait(lock, [buffer = m_buffer](){ return buffer->producer_length() < buffer->capacity(); });
+      // Keep the lock locked when exiting, too.
+      lock.release();
       Dout(dc::notice, "Returning from ProducerAccess::wait()");
     }
 
