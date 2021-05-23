@@ -117,7 +117,7 @@ Timer::Handle RunningTimers::push(TimerQueueIndex interval, Timer* timer)
 
 Timer* RunningTimers::update_current_timer(current_t::wat& current_w, Timer::time_point now)
 {
-  DoutEntering(dc::notice, "RunningTimers::update_current_timer(current_w, " << now.time_since_epoch().count() << ")");
+  DoutEntering(dc::notice, "RunningTimers::update_current_timer(current_w, " << now.time_since_epoch() << " s)");
 
   // Don't call this function while we have a current timer.
   ASSERT(current_w->timer == nullptr);

@@ -123,3 +123,9 @@ SingletonInstance<Indexes> dummy __attribute__ ((__unused__));
 } // namespace
 
 } // namespace threadpool
+
+#if defined(CWDEBUG) && !defined(DOXYGEN)
+NAMESPACE_DEBUG_CHANNELS_START
+channel_ct timer("TIMER");
+NAMESPACE_DEBUG_CHANNELS_END
+#endif

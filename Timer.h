@@ -39,6 +39,12 @@
 #include <functional>
 #include <map>
 
+#if defined(CWDEBUG) && !defined(DOXYGEN)
+NAMESPACE_DEBUG_CHANNELS_START
+extern channel_ct timer;
+NAMESPACE_DEBUG_CHANNELS_END
+#endif
+
 namespace threadpool {
 
 #ifndef DOXYGEN
@@ -56,8 +62,12 @@ class RunningTimers;
 #ifndef DOXYGEN
 struct TimerTypes
 {
-  using clock_type = std::chrono::high_resolution_clock;
+  using clock_type = std::chrono::steady_clock;                 // It being monotonic is a requirement.
   using time_point = std::chrono::time_point<clock_type>;
+
+  // Require at least 100 microseconds resolution (which is 1/10000th of a second).
+  // This is more like a warning; if this asserts you have to sit down and think about what to do.
+  static_assert(clock_type::period::den >= 10000 * clock_type::period::num, "Your clock doesn't have enough resolution.");
 };
 #endif
 
@@ -198,6 +208,15 @@ class Timer
 
   /// Return the point at which this timer will expire. Only valid when is_running.
   time_point get_expiration_point() const { return m_expiration_point; }
+
+#ifdef CWDEBUG
+  void print_on(std::ostream& os) const { os << "Timer:" << get_expiration_point(); }
+  friend std::ostream& operator<<(std::ostream& os, Timer const& timer)
+  {
+    timer.print_on(os);
+    return os;
+  }
+#endif
 };
 
 class Index;
