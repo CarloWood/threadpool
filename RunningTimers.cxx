@@ -36,14 +36,15 @@
 extern "C" void timer_signal_handler(int)
 {
   //write(1, "\nEntering timer_signal_handler()\n", 33);
-  threadpool::RunningTimers::instance().set_a_timer_expired();
+  threadpool::RunningTimers::instance().set_POSIX_timer_expired();
   AIThreadPool::call_update_current_timer();
   //write(1, "\nLeaving timer_signal_handler()\n", 32);
 }
 
 namespace threadpool {
 
-RunningTimers::RunningTimers() : m_timer_signum(utils::Signal::reserve_and_next_rt_signum()), m_a_timer_expired(false)
+RunningTimers::RunningTimers() : m_timer_signum(utils::Signal::reserve_and_next_rt_signum()), m_POSIX_timer_expired(false),
+  m_timer_sigset{[&]{ sigset_t tmp; sigemptyset(&tmp); sigaddset(&tmp, m_timer_signum); return tmp; }()}
 {
   // Initialize m_cache and m_tree.
   for (int interval = 0; interval < tree_size; ++interval)
@@ -59,11 +60,9 @@ RunningTimers::RunningTimers() : m_timer_signum(utils::Signal::reserve_and_next_
   // Call timer_signal_handler when the m_timer_signum signal is caught by a thread.
   //std::cerr << "m_timer_signum = " << m_timer_signum << std::endl;
   utils::Signal::instance().register_callback(m_timer_signum, timer_signal_handler);
-  sigemptyset(&m_timer_sigset);
-  sigaddset(&m_timer_sigset, m_timer_signum);
 }
 
-RunningTimers::Current::Current() : timer(nullptr)
+RunningTimers::Current::Current() : expired_timer(nullptr), expire_point(Timer::time_point::max())
 {
   // Create a monotonic timer.
   struct sigevent sigevent;
@@ -80,48 +79,72 @@ RunningTimers::Current::Current() : timer(nullptr)
   }
 }
 
-Timer::Handle RunningTimers::push(TimerQueueIndex interval, Timer* timer)
+Timer::Handle RunningTimers::push(Timer::Interval interval, Timer* timer, Timer::time_point& expiration_point)
 {
-  DoutEntering(dc::notice, "RunningTimers::push(" << interval << ", " << (void*)timer << ")");
-  assert(interval.get_value() < m_queues.size());
+  DoutEntering(dc::notice, "RunningTimers::push(" << interval.duration() << ", " << (void*)timer << ")");
+  TimerQueueIndex const interval_index = interval.index();
+  assert(interval_index.get_value() < m_queues.size());
   uint64_t sequence;
-  bool is_current;
-  Timer::time_point expiration_point = timer->get_expiration_point();
+  bool is_front;
   {
-    timer_queue_t::wat queue_w(m_queues[interval]);
+    timer_queue_t::wat queue_w(m_queues[interval_index]);
+    expiration_point = interval.duration() + Timer::clock_type::now();
+    // expiration_point must be a reference to timer->m_expiration_point.
+    ASSERT(expiration_point == timer->get_expiration_point());
+
+    Dout(dc::timer, "Inserting " << expiration_point << " into the queue.");
     sequence = queue_w->push(timer);
-    is_current = queue_w->is_current(sequence);
-    // Being 'current' means that it is the first timer in this queue.
-    // Since the Handle for this timer isn't returned yet, it can't be
-    // cancelled by another thread, so it will remain the current timer
-    // until we leave this function. It is not necessary to keep the
-    // queue locked.
-    if (is_current)
-      m_mutex.lock();
+    is_front = queue_w->is_front(sequence);
+    // Being 'front' means that it is the next timer to expire with this interval.
+    // Since the Handle for this timer isn't returned yet, it can't be canceled
+    // by another thread, so it will remain the front timer until we leave this
+    // function. It is not necessary to keep the queue locked.
   }
-  Timer::Handle handle{interval, sequence};
-  if (is_current)
+  if (is_front)
   {
-    int cache_index = to_cache_index(interval);
-    decrease_cache(cache_index, expiration_point);
-    is_current = m_tree[1] == cache_index;
-    m_mutex.unlock();
-    if (is_current)
-    {
-      update_running_timer();
+    int cache_index = to_cache_index(interval_index);
+    m_mutex.lock();                                                                                     // ^
+    decrease_cache(cache_index, expiration_point);                                                      // | m_mutex locked
+    bool is_next = m_tree[1] == cache_index;                                                            // |
+    m_mutex.unlock();                                                                                   // v
+    if (is_next)
       AIThreadPool::call_update_current_timer();
-    }
   }
-  return handle;
+  return {interval_index, sequence};
 }
 
-Timer* RunningTimers::update_current_timer(current_t::wat& current_w, Timer::time_point now)
+#ifdef DEBUG_SPECIFY_NOW
+// Deprecated function left in for testsuite.
+Timer::Handle RunningTimers::push(TimerQueueIndex interval_index, Timer* timer)
+{
+  DoutEntering(dc::notice, "RunningTimers::push(" << interval_index << ", " << (void*)timer << ")");
+  assert(interval_index.get_value() < m_queues.size());
+  uint64_t sequence;
+  bool is_front;
+  {
+    timer_queue_t::wat queue_w(m_queues[interval_index]);
+    sequence = queue_w->push(timer);
+    is_front = queue_w->is_front(sequence);
+  }
+  if (is_front)
+  {
+    int cache_index = to_cache_index(interval_index);
+    m_mutex.lock();                                                                                     // ^
+    decrease_cache(cache_index, timer->get_expiration_point());                                         // | m_mutex locked
+    bool is_next = m_tree[1] == cache_index;                                                            // |
+    m_mutex.unlock();                                                                                   // v
+    if (is_next)
+      AIThreadPool::call_update_current_timer();
+  }
+  return {interval_index, sequence};
+}
+#endif
+
+// If there is a timer that has already expired, return it.
+// Otherwise return nullptr and, if there is a timer that didn't expire yet, call timer_settime(2).
+bool RunningTimers::update_current_timer(current_t::wat& current_w, Timer::time_point now)
 {
   DoutEntering(dc::notice, "RunningTimers::update_current_timer(current_w, " << now.time_since_epoch() << " s)");
-
-  // Don't call this function while we have a current timer.
-  ASSERT(current_w->timer == nullptr);
-  bool need_update_cleared_and_current_unlocked = false;
 
   // Initialize interval, next and timer to correspond to the Timer in RunningTimers
   // that is the first to expire next, if any (if not then return nullptr).
@@ -129,53 +152,80 @@ Timer* RunningTimers::update_current_timer(current_t::wat& current_w, Timer::tim
   Timer::time_point next;
   Timer* timer;
   Timer::time_point::duration duration;
-  m_mutex.lock();
-  while (true)  // So we can use continue.
-  {
-    interval = m_tree[1];                     // The interval of the timer that will expire next.
-    next = m_cache[interval];                 // The time at which it will expire.
-
-    if (next == Timer::s_none)                // Is there a next timer at all?
-    {
-      m_mutex.unlock();
-      if (AI_UNLIKELY(need_update_cleared_and_current_unlocked))
-        current_w.relock(m_current);          // Lock m_current again.
-      // current_w->timer is unset.
-      Dout(dc::notice, "No timers.");
-      return nullptr;                         // There is no next timer.
-    }
-
-    if (AI_LIKELY(!need_update_cleared_and_current_unlocked))
-    {
-      current_w.unlock();                     // Unlock m_current.
-      need_update_cleared_and_current_unlocked = true;
-    }
-
-    m_mutex.unlock();                         // The queue must be locked first in order to avoid a deadlock.
+  bool current_unlocked = false;
+  m_mutex.lock();                                                                                       // ^
+  while (true)  // So we can use continue.                                                              // | m_mutex locked
+  {                                                                                                     // |
+    interval = m_tree[1];                       // The interval of the timer that will expire next.     // |
+    if (AI_LIKELY(!current_unlocked))                                                                   // |
+    {                                                                                                   // |
+      // current_w must be unlocked before we lock m_queues to avoid a dead lock.                       // |
+      current_w.unlock();                       // Unlock m_current.                                    // |
+      current_unlocked = true;                                                                          // |
+    }                                                                                                   // v
+    m_mutex.unlock();                           // The queue must be locked first in order to avoid a deadlock.
     timer_queue_t::wat queue_w(m_queues[to_queues_index(interval)]);
-    m_mutex.lock();                           // Lock m_mutex again.
-    // Because of the short unlock of m_mutex, m_tree[1] and/or m_cache[interval] might have changed.
-    next = m_cache[interval];
-    if (AI_UNLIKELY(m_tree[1] != interval || next == Timer::s_none))    // Was there a race? Then try again.
-      continue;
-    duration = next - now;
-    if (duration.count() <= 0)                // Did this timer already expire?
+    // *** THIS IS THE CANONICAL POINT AT WHICH MOMENT THE TIMER EXPIRES *).
+    // Where 'expires' means that timer->expire() will be called.
+    // *) Provided that all boolean expressions have the right value.
+    //    It might still not happen if,
+    //    1) Right here m_tree[1] changes to a different interval because
+    //       a new timer with a different interval is added that expires sooner.
+    //    2) Before m_mutex was locked, or right here while it is not locked,
+    //       all timers were canceled, causing m_tree[1] to point to an
+    //       interval for which m_cache[interval] == Timer::s_none and this
+    //       remains the case until we locked m_mutex in the next line.
+    //    3) Before m_mutex was locked, or right here while it is not locked,
+    //       all expired timers canceled and/or never existed (we got here
+    //       because a new timer was added that expires sooner than the
+    //       current timer). In that case there are no expired timers,
+    //       so no timer->expire() will be called.
+
+    m_mutex.lock();                            // Lock m_mutex again.                                   // ^
+    // Because of the short unlock of m_mutex, m_tree[1] might have changed.                            // | m_mutex locked
+    if (AI_UNLIKELY(m_tree[1] != interval))     // Was there a race? See 1) above.                      // |
+      continue;                                 // Then try again.                                      // |
+    next = m_cache[interval];                                                                           // |
+    m_mutex.unlock();                                                                                   // v
+
+    // update_current_timer should only be called when there is an expired timer,
+    // or a new timer was just added that became the next timer to expire.
+    // However, that timer could have been canceled in the meantime,
+    // so it is possible that there is no timer left at all.
+    if (AI_UNLIKELY(next == Timer::s_none))     // Are all timer canceled? See 2) above.
     {
-      m_mutex.unlock();
-      timer = queue_w->pop(m_mutex);
-      Dout(dc::notice|flush_cf, "Timer " << (void*)timer << " expired " << -std::chrono::duration_cast<std::chrono::nanoseconds>(duration).count() << " ns ago.");
-      increase_cache(interval, queue_w->next_expiration_point());
-      m_mutex.unlock();
-      current_w.relock(m_current);            // Lock m_current again.
-      // current_w->timer is unset.
-      Dout(dc::notice, "Expired timer.");
-      return timer;                           // Do the call back.
+      current_w.relock(m_current);              // Lock m_current again.
+      current_w->expired_timer = nullptr;
+      return false;
     }
-    Dout(dc::notice, "Timer did not expire yet.");
+    duration = next - now;
+    if (duration.count() <= 0)                  // Did this timer already expire? See 3) above.
+    {
+      // *** THIS IS THE POINT AT WHICH IT IS CERTAIN THAT timer->expire() WILL BE CALLED.
+      timer = queue_w->pop(m_mutex);            // This act of removing it from the queue makes it      // ^
+                                                // impossible that it is canceled once the queue is     // |
+                                                // unlocked again.                                      // |
+      Dout(dc::notice|flush_cf, "Timer " << (void*)timer << " expired " <<                              // | m_mutex locked
+          -std::chrono::duration_cast<std::chrono::nanoseconds>(duration).count() << " ns ago.");       // | (by pop(m_mutex))
+      // Update m_tree and m_cache.                                                                     // |
+      increase_cache(interval, queue_w->next_expiration_point());                                       // |
+      duration = m_cache[m_tree[1]] - now;      // Time till the next timer expires (if any;            // |
+                                                // otherwise this is just very large).                  // |
+      m_mutex.unlock();                                                                                 // v
+      timer->expired_start();                   // *** STOP DESTRUCTION OF THE TIMER. This has to be
+                                                // done before we unlock queue_w because once that is
+                                                // unlocked a call to timer->stop() can return, and that
+                                                // could be called from ~Timer().
+      Dout(dc::notice, "Expired timer " << timer);
+      current_w.relock(m_current);              // Lock m_current again.
+      current_w->expired_timer = timer;         // Do the call back.
+      return duration.count() <= 0;             // Return true if the next timer also has already expired.
+    }
+#ifdef CWDEBUG
     timer = queue_w->peek();
+#endif
     break;
   }
-  m_mutex.unlock();
 
   // Calculate the timespec at which the current timer will expire.
   struct itimerspec new_value;
@@ -189,16 +239,21 @@ Timer* RunningTimers::update_current_timer(current_t::wat& current_w, Timer::tim
   // Update the POSIX timer.
   Dout(dc::notice|flush_cf, "Calling timer_settime() for " << new_value.it_value.tv_sec << " seconds and " << new_value.it_value.tv_nsec << " nanoseconds.");
   current_w.relock(m_current);                  // Lock m_current again.
-  sigprocmask(SIG_BLOCK, &m_timer_sigset, nullptr);
-  [[maybe_unused]] bool pending = timer_settime(current_w->posix_timer, 0, &new_value, nullptr) == 0;
-  ASSERT(pending);
-  current_w->timer = timer;
-  m_a_timer_expired = false;
-  sigprocmask(SIG_UNBLOCK, &m_timer_sigset, nullptr);
+  // Only set the POSIX timer again when it has to expire sooner, or has already expired.
+  if (next < current_w->expire_point || m_POSIX_timer_expired.load(std::memory_order_relaxed))
+  {
+    sigprocmask(SIG_BLOCK, &m_timer_sigset, nullptr);
+    m_POSIX_timer_expired.store(false, std::memory_order_relaxed);
+    [[maybe_unused]] bool pending = timer_settime(current_w->posix_timer, 0, &new_value, nullptr) == 0;
+    ASSERT(pending);
+    current_w->expire_point = next;
+    sigprocmask(SIG_UNBLOCK, &m_timer_sigset, nullptr);
+    Dout(dc::notice|flush_cf, "Timer " << (void*)timer << " started.");
+  }
 
-  // Return nullptr, but this time with current_w->timer set.
-  Dout(dc::notice|flush_cf, "Timer " << (void*)timer << " started.");
-  return nullptr;
+  // We just set the POSIX timer, so obviously there is no expired timer.
+  current_w->expired_timer = nullptr;
+  return false;
 }
 
 RunningTimers::~RunningTimers()

@@ -27,6 +27,7 @@
 
 #pragma once
 
+#include "AIThreadPool.h"
 #include "utils/Vector.h"
 #include "utils/Singleton.h"
 #include "debug.h"
@@ -38,6 +39,7 @@
 #include <cstdint>
 #include <functional>
 #include <map>
+#include <mutex>
 
 #if defined(CWDEBUG) && !defined(DOXYGEN)
 NAMESPACE_DEBUG_CHANNELS_START
@@ -74,15 +76,7 @@ struct TimerTypes
 template<TimerTypes::time_point::rep count, typename Unit>
 struct Interval;
 
-/**
- * A timer.
- *
- * Allows a callback to some <code>std::function<void()></code> that can
- * be specified during construction or while calling the @ref start member function.
- *
- * The @ref start member function must be passed an Interval object.
- */
-class Timer
+class TimerStart
 {
  public:
   using clock_type = TimerTypes::clock_type;    ///< The underlaying clock type.
@@ -94,94 +88,183 @@ class Timer
 
 #ifndef DOXYGEN
   // Use a value far in the future to represent 'no timer' (aka, a "timer" that will never expire).
-  static time_point constexpr s_none{time_point::duration(std::numeric_limits<time_point::rep>::max())};
+  static constexpr time_point s_none{time_point::max()};
 
   /**
    * A timer interval.
    *
-   * A Timer::Interval can only be instantiated from a <code>threadpool::Interval<count, Unit></code>
+   * A TimerStart::Interval can only be instantiated from a <code>threadpool::Interval<count, Unit></code>
    * and only after main() is already reached. Normally you just want to pass a
    * <code>threadpool::Interval<count, Unit></code> directly to @ref start.
    */
   struct Interval
   {
    private:
-    friend class Timer;         // Timer::start needs read access.
     TimerQueueIndex m_index;
     time_point::duration m_duration;
 
+   private:
+    // Only threadpool::Interval maybe construct these objects (which happens before main()).
     template<TimerTypes::time_point::rep count, typename Unit>
     friend struct threadpool::Interval;
-    Interval(TimerQueueIndex index_, time_point::duration duration_) : m_index(index_), m_duration(duration_) { DEBUG_ONLY(Timer::s_interval_constructed = true); }
+    Interval(TimerQueueIndex index_, time_point::duration duration_) : m_index(index_), m_duration(duration_) { DEBUG_ONLY(TimerStart::s_interval_constructed = true); }
+
    public:
-    Interval() { }
+    Interval() : m_index{}, m_duration{} { }
+
+    // Should only be used from AITimer::set_interval for its member variable AITimer::mInterval directly after construction.
+    Interval const& operator=(Interval const& rhs)
+    {
+      // We're trying to keep Interval objects immutable: do not assign to an Interval that wasn't just default constructed.
+      ASSERT(m_index.undefined());
+      m_index = rhs.m_index;
+      m_duration = rhs.m_duration;
+      return *this;
+    }
 
    public:
     /// A copy constructor is provided, but doesn't seem needed.
-    Interval(Interval const& interval) : m_index(interval.m_index), m_duration(interval.m_duration) { DEBUG_ONLY(Timer::s_interval_constructed |= !m_index.undefined()); }
+    Interval(Interval const& interval) : m_index(interval.m_index), m_duration(interval.m_duration) { DEBUG_ONLY(TimerStart::s_interval_constructed |= !m_index.undefined()); }
 
-    /// @internal For debugging purposes mainly.
-    time_point::duration duration() { return m_duration; }
+    /// Return the duration of this interval.
+    time_point::duration duration() const { return m_duration; }
+
+    /// Return the index of this interval.
+    TimerQueueIndex index() const { return m_index; }
+
+#ifdef CWDEBUG
+    friend std::ostream& operator<<(std::ostream& os, Interval const& interval)
+    {
+      os << '{' << interval.m_index << ", " << interval.m_duration << '}';
+      return os;
+    }
+#endif
   };
 
+  /// Start the timer providing a (new) call back function, to expire after time period `interval`.
+  void start(Interval interval, std::function<void()> call_back);
+
+  /// Start the timer, using a previously assigned call back function, to expire after time period `interval`.
+  void start(Interval interval);
+
+#ifdef DEBUG_SPECIFY_NOW
+  /// Start this timer providing a (new) call back function, to expire after time
+  /// period `interval` relative to `now`. This causes a race that will assert(!)
+  /// if another timer with the same interval is started shortly after: each timer
+  /// is added to queue (one per interval) and new expiration points of added timers
+  /// must monotonically increase. Concurrent calls to start() do not ensure
+  /// they are added to this queue in the order that start() is called.
+  /// Therefore only use this function when you know what you are doing and feel
+  /// confident that at all times the timer will be added to the queue before another
+  /// timer with the same interval is started.
+  void start(Interval interval, std::function<void()> call_back, time_point now);
+
+  /// Start this timer using a previously assigned call back function. See comment
+  /// above with regard to race condition.
+  void start(Interval interval, time_point now);
+#endif
+};
+
+/**
+ * A timer.
+ *
+ * Allows a callback to some <code>std::function<void()></code> that can
+ * be specified during construction or while calling the @ref start member function.
+ *
+ * The @ref start member function must be passed an Interval object.
+ */
+class Timer : public TimerStart
+{
+ public:
   struct Handle
   {
-    uint64_t m_sequence;        ///< A unique sequence number for Timer's with this interval. Only valid when running.
-    TimerQueueIndex m_interval; ///< Interval index is_undefined means 'not running'.
+   private:
+    static constexpr int s_not_running = -1;
+    static constexpr int s_expire_called_first = -2;
+    static constexpr int s_stop_called_first = -3;
+    // A Handle is read-only for the duration that the corresponding Timer is running.
+    // *ALL* methods must be either const or private. The only function that may
+    // change a Handle is Timer::start.
+    uint64_t m_sequence;                        ///< A sequence number that is unique within the set of Timer-s with the same interval. Only valid when running.
+    std::atomic<int> m_interval_index;          ///< A TimerQueueIndex; or one of the above three values.
 
-    /// Default constructor. Construct a handle for a "not running timer".
-    Handle() { }
+   public:
+    /// Default constructor: construct a handle for a "not running timer".
+    // The value of m_sequence is irrelevant since the default constructor of m_interval_index will turn this into a 'not running' timer,
+    // the assigned magic number however will cause operator== to function.
+    Handle() : m_sequence(std::numeric_limits<uint64_t>::max() - 1), m_interval_index(s_not_running) { }
 
     /// Construct a Handle for a running timer with interval @a interval and number sequence @a sequence.
-    constexpr Handle(TimerQueueIndex interval, uint64_t sequence) : m_sequence(sequence), m_interval(interval) { }
+    constexpr Handle(TimerQueueIndex interval_index, uint64_t sequence) : m_sequence(sequence), m_interval_index(interval_index.get_value()) { }
 
-    bool is_running() const { return !m_interval.undefined(); }
-    void set_not_running() { m_interval.set_to_undefined(); }
-    bool is_removed() const { return m_sequence == std::numeric_limits<uint64_t>::max(); }
-    void set_removed() { m_sequence = std::numeric_limits<uint64_t>::max(); }
+    uint64_t sequence() const { return m_sequence; }
+    TimerQueueIndex interval_index() const
+    {
+      int interval_index = m_interval_index.load(std::memory_order_relaxed);
+      return TimerQueueIndex{static_cast<size_t>(interval_index < 0 ? -1 : interval_index)};
+    }
+    bool operator==(Handle const& rhs) const { return m_sequence == rhs.m_sequence; }
+
+    bool is_running() const { return m_interval_index.load(std::memory_order_relaxed) >= 0; }
+    bool do_call_back()
+    {
+      int interval_index = m_interval_index.load(std::memory_order_relaxed);
+      return interval_index >= 0 && m_interval_index.compare_exchange_strong(interval_index, s_expire_called_first, std::memory_order_relaxed);
+    }
+    bool do_call_cancel()
+    {
+      int interval_index = m_interval_index.load(std::memory_order_relaxed);
+      return interval_index >= 0 && m_interval_index.compare_exchange_strong(interval_index, s_stop_called_first, std::memory_order_relaxed);
+    }
+    bool stop_called_first()
+    {
+      return m_interval_index.load(std::memory_order_relaxed) == s_stop_called_first;
+    }
+    void set_not_running()
+    {
+      m_interval_index.store(s_not_running, std::memory_order_relaxed);
+    }
+
+   private:
+    // start() is the only function that may assign to Handle.
+    friend void TimerStart::start(Interval interval, std::function<void()> call_back);
+    friend void TimerStart::start(Interval interval);
+#ifdef DEBUG_SPECIFY_NOW
+    friend void TimerStart::start(Interval interval, std::function<void()> call_back, time_point now);
+    friend void TimerStart::start(Interval interval, time_point now);
+#endif
+    Handle& operator=(Handle const& rhs)
+    {
+      m_sequence = rhs.m_sequence;
+      m_interval_index.store(rhs.m_interval_index.load());
+      return *this;
+    }
   };
 #endif
 
  private:
+  friend class TimerStart;
   Handle m_handle;                      ///< If m_handle.is_running() returns true then this timer is running
                                         ///  and m_handle can be used to find the corresponding Timer object.
   time_point m_expiration_point;        ///< The time at which we should expire (only valid when this is a running timer).
   std::function<void()> m_call_back;    ///< The callback function (only valid when this is a running timer).
+  std::mutex m_prevent_destruction;     ///< Locked while calling expire() to prevent destructing the Timer.
 
  public:
   Timer() = default;
   Timer(std::function<void()> call_back) : m_call_back(call_back) { }
 
   /// Destruct the timer. If it is (still) running, stop it.
-  ~Timer() { stop(); }
-
-  /// Start this timer providing a (new) call back function.
-  void start(Interval interval, std::function<void()> call_back, time_point now);
-
-  /// Convenience function that calls clock_type::now() for you.
-  void start(Interval interval, std::function<void()> call_back) { start(interval, call_back, clock_type::now()); }
-
-  /// Start this timer using a previously assigned call back function.
-  void start(Interval interval, time_point now);
-
-  /// Convenience function that calls clock_type::now() for you.
-  void start(Interval interval) { start(interval, clock_type::now()); }
+  // If stop() fails then the timer expired and might be still in the process of calling Timer::expire.
+  // Therefore wait until m_prevent_destruction can be locked again before destructing this object.
+  // If stop() doesn't fail, then it is still possible that Timer::expire will be called, although
+  // the actual call to m_call_back() was prohibited. Therefore we unconditionally must attempt to lock
+  // m_prevent_destruction.
+  ~Timer() { stop(); std::lock_guard<std::mutex> lk(m_prevent_destruction); }
 
   /// Stop this timer if it is (still) running.
-  void stop();
-
-  /// Called when this timer expires.
-  void expire()
-  {
-    m_handle.set_not_running();
-    m_call_back();
-  }
-
-  /// Called when this timer is removed from the queue.
-  void removed()
-  {
-    m_handle.set_removed();
-  }
+  /// Returns true if the call to the call_back was successfully prohibited.
+  bool stop();
 
   /// Call this to reset the call back function, destructing any possible objects that it might contain.
   void release_callback()
@@ -200,16 +283,47 @@ class Timer
   // Called by RunningTimers upon destruction. Causes a later call to stop() not to access RunningTimers anymore.
   void set_not_running();
 
+ private:
+  // Called from RunningTimers::update_current_timer when this timer is found to have expired
+  // and is thus returned as current_w->expired_timer.
+  friend class RunningTimers;
+  void expired_start()
+  {
+    m_prevent_destruction.lock();       // Unlocked upon leaving expire().
+  }
+
+  // Called when this timer expires.
+  // Called from AIThreadPool::Worker::tmain for timers that expired (were just returned
+  // by RunningTimers::update_current_timer). Hence m_prevent_destruction is locked (see expired_start).
+  friend class AIThreadPool::Worker;
+  void expire()
+  {
+    std::lock_guard<std::mutex> lk(m_prevent_destruction, std::adopt_lock);
+    if (m_handle.do_call_back())
+      m_call_back();
+  }
+
  public:
   // Accessors.
 
   /// Return the handle of this timer.
-  Handle handle() const { return m_handle; }
+//  Handle handle() const { return m_handle; }
 
   /// Return the point at which this timer will expire. Only valid when is_running.
   time_point get_expiration_point() const { return m_expiration_point; }
 
 #ifdef CWDEBUG
+  // Called from testsuite.
+  void debug_expire()
+  {
+    expire();
+  }
+
+  bool debug_has_handle(Handle const& handle) const
+  {
+    return m_handle == handle;
+  }
+
   void print_on(std::ostream& os) const { os << "Timer:" << get_expiration_point(); }
   friend std::ostream& operator<<(std::ostream& os, Timer const& timer)
   {
@@ -218,6 +332,8 @@ class Timer
   }
 #endif
 };
+
+namespace detail {
 
 class Index;
 
@@ -255,11 +371,13 @@ struct Register : public Index
   Register() { Indexes::instantiate().add(period, this); }
 };
 
+} // namespace detail
+
 template<Timer::time_point::rep count, typename Unit>
 struct Interval
 {
   static constexpr Timer::time_point::rep period = std::chrono::duration_cast<Timer::time_point::duration>(Unit{count}).count();
-  static Register<period> index;
+  static detail::Register<period> index;
   Interval() { }
   operator Timer::Interval() const { return {TimerQueueIndex(index), Timer::time_point::duration{period}}; }
 };
@@ -270,6 +388,9 @@ constexpr Timer::time_point::rep Interval<count, Unit>::period;
 
 //static
 template<Timer::time_point::rep count, typename Unit>
-Register<Interval<count, Unit>::period> Interval<count, Unit>::index;
+detail::Register<Interval<count, Unit>::period> Interval<count, Unit>::index;
+
+static constexpr int number_of_slow_down_intervals = 12;
+extern std::array<Timer::Interval, number_of_slow_down_intervals> slow_down_intervals;
 
 } // namespace threadpool

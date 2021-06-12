@@ -95,47 +95,30 @@ void AIThreadPool::Worker::tmain(int const self)
   {
     Dout(dc::threadpool, "Beginning of thread pool main loop (q = " << q << ')');
 
-    Timer::time_point now;
+    // Handle Timers.
     while (s_call_update_current_timer.try_obtain(duty))
     {
       Dout(dc::action, "Took ownership of timer action.");
+      Timer::time_point now = Timer::clock_type::now();
 
       // First check if there have any timers expired.
       Timer* expired_timer;
+      bool another_timer_expired;
       {
-        // If this is (still) true then it wasn't reset by a thread that was
-        // woken up by the signal handler, which means nothing except that
-        // we were not just woken up.
-        bool last_timer_expired = RunningTimers::instance().test_and_clear_a_timer_expired();
         auto current_w{RunningTimers::instance().access_current()};
-        if (last_timer_expired)
+        another_timer_expired = RunningTimers::instance().update_current_timer(current_w, now);
+        if (!(expired_timer = current_w->expired_timer))
         {
-          // This most likely happens when all threads were busy when the timer signal went off.
-          Dout(dc::threadpool|flush_cf, "Timer " << (void*)current_w->timer << " did not wake up this thread.");
-          current_w->timer = nullptr;     // The timer expired.
-        }
-        // Don't call update_current_timer when we're still waiting for the current timer to expire.
-        // The reasoning here is: if the FIRST timer to expire didn't expire yet,
-        // then we'll have no expired timers at all.
-        if (AI_UNLIKELY(current_w->timer))
-        {
-          Dout(dc::notice, "Not calling update_current_timer because current_w->timer = " << (void*)current_w->timer);
-          break;
-        }
-        // Use the same 'now' for subsequent calls; timers that expire after
-        // we already reached this point will have to wait their turn.
-        if (!now.time_since_epoch().count())
-          now = Timer::clock_type::now();
-        // Is there a(nother) timer that has expired before `now`?
-        if (!(expired_timer = RunningTimers::instance().update_current_timer(current_w, now)))
-        {
-          // There is no timer, or
-          // This thread just called timer_settime and set current_w->timer.
-          // Other threads won't call update_current_timer anymore until that timer expired.
+          // If no timer just expired then there can't be another already expired timer.
+          ASSERT(!another_timer_expired);
+          // There are no more expired timers left.
+          // This thread just called timer_settime (if there is any timer left at all) and set current_w->debug_timer.
+          // Other threads won't call update_current_timer anymore until that timer expired and new timer was added that expires sooner.
           break;
         }
       } // Do the callback with RunningTimers::m_current unlocked.
-      call_update_current_timer();         // Keep calling update_current_timer until it returns nullptr.
+      if (another_timer_expired)
+        call_update_current_timer();            // Keep calling update_current_timer until it returns nullptr.
       try
       {
         expired_timer->expire();
@@ -316,13 +299,6 @@ void AIThreadPool::Worker::tmain(int const self)
         thread_pool.use_color(color);
       }
 #endif
-      if (RunningTimers::instance().test_and_clear_a_timer_expired())
-      {
-        auto current_w{RunningTimers::instance().access_current()};
-        Dout(dc::threadpool|flush_cf, "Timer " << (void*)current_w->timer << " woke up a thread.");
-        current_w->timer = nullptr;     // The timer expired.
-      }
-
       // We just left sem_wait(); reset 'duty' to count how many tasks we perform
       // for this single wake-up. Calling try_obtain() with a duty larger than
       // zero will call sem_trywait in an attempt to decrease the semaphore

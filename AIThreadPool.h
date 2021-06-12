@@ -142,15 +142,17 @@ NAMESPACE_DEBUG_CHANNELS_END
  */
 class AIThreadPool
 {
- private:
+ public:
   struct Worker;
+
+ private:
   using worker_function_t = void (*)(int const);
   using worker_container_t = std::vector<Worker>;
   using workers_t = aithreadsafe::Wrapper<worker_container_t, aithreadsafe::policy::ReadWrite<AIReadWriteMutex>>;
 
   class Action
   {
-    static utils::threading::SpinSemaphore s_semaphore;                     // Global semaphore to wake up all threads of the thread pool.
+    static utils::threading::SpinSemaphore s_semaphore;                 // Global semaphore to wake up all threads of the thread pool.
     std::atomic<uint64_t> m_skipped_required;                           // See constexpr below.
     static constexpr uint64_t required_mask = 0xffffffff;               // Mask for the bits that count the number of actions required for this specific Action.
     static constexpr uint64_t skipped_mask = 0xffffffff00000000UL;      // Mask for the bits that count the number of times wakeup_n(1) was skipped in required().
@@ -195,7 +197,10 @@ class AIThreadPool
       uint64_t new_skipped_required;
       do
       {
+        // The number of times that wakeup_n(1) was skipped is less than or equal the number of times this action was required.
         ASSERT((skipped_required >> skipped_shift) <= (skipped_required & required_mask));
+        // If m_skipped_required is zero then we will call wakeup_n(n) and increment required (the lower 32 bits) with n,
+        // otherwise wakeup_n() will not be called and both, required and skipped (upper and lower 32 bits) are incremented with n.
         new_skipped_required = skipped_required == 0 ? skipped_required + n : skipped_required + (static_cast<uint64_t>(n) << skipped_shift) + n;
       }
       while (!m_skipped_required.compare_exchange_weak(skipped_required, new_skipped_required, std::memory_order_release));
@@ -215,7 +220,7 @@ class AIThreadPool
       uint64_t skipped_required;
       while ((skipped_required = m_skipped_required.load(std::memory_order_relaxed)) > 0)       // If >0 then the required count must be larger than zero.
       {
-        uint64_t new_skipped_required = (skipped_required & required_mask) - 1;         // Decrement required count and reset skipped count.
+        uint64_t new_skipped_required = (skipped_required & required_mask) - 1;                 // Decrement required count and reset skipped count.
         if (!m_skipped_required.compare_exchange_weak(skipped_required, new_skipped_required, std::memory_order_acquire))
           continue;
         uint32_t skipped = skipped_required >> skipped_shift;
@@ -385,6 +390,7 @@ class AIThreadPool
     }
   };
 
+ public:        // Because Timer needs to add Worker::tmain as a friend.
   struct Worker
   {
     using quit_t = aithreadsafe::Wrapper<Quit, aithreadsafe::policy::Primitive<std::mutex>>;
@@ -466,6 +472,7 @@ class AIThreadPool
     static int get_handle();
   };
 
+ private:
   // Number of idle workers.
   static std::atomic_int s_idle_threads;
 

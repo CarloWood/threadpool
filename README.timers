@@ -1,0 +1,305 @@
+Typenames and abbreviations
+===========================
+
+Everything is defined in namespace threadpool unless otherwise stated.
+
+VectorIndex is defined in namespace utils.
+Wrapper is define in namespace aithreadsafe.
+
+[36mcurrent_t[0m is a Wrapper<[32mCurrent[0m ...>, where Current is defined in RunningTimers.
+[36mtimer_queue_t[0m is a Wrapper<[32mTimerQueue[0m ...>.
+running_timers_type is a std::deque<Timer*>.
+
+TimerQueueIndex is a VectorIndex<...>, the type of the index of Vector<[36mtimer_queue_t[0m ...>.
+
+clock_type is Timer::clock_type is TimerTypes::clock_type is std::chrono::steady_clock.
+time_point is Timer::time_point is TimerTypes::time_point is std::chrono::time_point<clock_type>.
+
+tree_size is a constexpr int with value 64. Below we use just 64 for brevity.
+
+Classes and their member variables
+==================================
+          
+      .-------------------------------> class [32mTimerQueue[0m
+      |                                 ----------------
+      |              .--subtract-from--   uint64_t m_sequence_offset;           // The number of timers that were popped from m_running_timers.
+      |   .----------v--> .-contains--    running_timers_type m_running_timers; // All running timers for the related interval.
+      |   |               | ptrs to
+      |   |               '-----------> class Timer
+      |   |                             -----------
+      |   |                         .--   Handle m_handle;                      //
+      | index                       |     time_point m_expiration_point;        // The expiration point of this timer.
+      | into                        |     std::function<void()> m_call_back;    // The call back to be called when it expires.
+      |   |                         | 
+      |   |                         '-> struct Handle (defined in Timer)
+      |   |                             --------------------------------
+      |   '----------------------------   uint64_t m_sequence;                  // A unique sequence number for Timer`s with this interval.
+      |                      .---------   TimerQueueIndex m_interval;           // 
+      |                      |     
+      |                      |          struct Interval (defined in Timer)
+   contains                  |          ----------------------------------
+      |                      +---------   TimerQueueIndex m_index;              // Initialized in Timer::start().
+      |                      |            time_point::duration m_duration;      // The duration of this interval.
+      |                    index     
+      |                    into         class RunningTimers (singleton)
+      |                      |          -------------------------------
+      |    .-------------------------->   std::mutex [31mm_mutex[0m;                   // Protects (the consistency of) m_tree and m_cache and the first element of each TimerQueue.
+      | locked               | .-index-   std::array<uint8_t, 64> [31mm_tree[0m;
+      | before               | +-into->   std::array<time_point, 64> [31mm_cache[0m;
+      '-----\--------------< '-v------>   Vector<[36mtimer_queue_t[0m ...> m_queues;   // [35mconst[0m: m_queues is read-only (initialized once before main()) and therefore thread-safe. It can not be made const.
+                                          int [35mconst[0m m_timer_signum;             // Signal number used for the m_current.posix_timer.
+                                          sigset_t [35mconst[0m m_timer_sigset;        // Same, but as a mask.
+                                          std::atomic_bool m_a_timer_expired;   // Set by the m_timer_signum signal handler.
+                                    .--   [36mcurrent_t[0m m_current;                  // This is the only instance, created before main().
+                                    |
+                                    '-> struct [32mCurrent[0m (defined in RunningTimers)                                              
+                                        -----------------------------------------                                              
+                                          timer_t posix_timer;                  // The POSIX per-process timer, set for the next timer to expire:
+
+The size of m_queues is fixed (and smaller than 64), its index corresponds to the
+index of m_tree and m_cache, namely one of the existing (fixed) intervals.
+
+API (usage)
+===========
+
+The lifetime of a Timer object is determined by the user, but should not be
+destructed before it expires and the call back function was called, because
+the destructor calls stop(), cancelling the timer.
+
+It is also possible to reuse a Timer object instead of destructing it, after
+it expires or after calling stop().
+
+The user calls Timer::start after creating a new Timer object (or after
+a Timer expired/stopped). No other thread may use the Timer object during
+the call to start.
+
+As soon as Timer::start returns, it has been added into the data structure of
+RunningTimers and will stay there until it either expires or is stopped.
+During this time, the user should not access the Timer object except
+for calling stop().
+
+Timer::m_expiration_point and Timer::m_call_back are initialized during
+construction and/or calling start() and not changed anywhere else. Therefore
+(read) access to those members is thread-safe. The former can be read
+through the accessor member function Timer::get_expiration_point. There
+is no accessor for m_call_back; I didn't think that was necessary and this
+way it can be guaranteed by the API that a callback is called at most once.
+
+There is also no accessor for Timer::m_handle: this handle is an internal
+variable and not for use by the user. Synchronization between expiration and
+cancelling is done by means of an atomic in Handle.
+
+To expire a Timer early, call timer.expire_now(). It is not guaranteed that
+upon return the callback was called already: it might expire for other reasons
+which turns expire_now() into a no-op, but doing the actual callback slightly
+later.
+
+In the image below, the std::deque's contain Timer pointers. But for
+clarity I wrote the Timer::m_expiration_point of the object that they point
+to into the box.
+
+                        Vector<[36mtimer_queue_t[0m ...> m_queues
+                        .---------------------------------------------------------------------------------------------------------------------------.
+                        |  [32mTimerQueue[0m                      [32mTimerQueue[0m                      [32mTimerQueue[0m                                               |
+                        | [32m.----------------------------.  .----------------------------.  .----------------------------.[0m                            |
+                        | [32m| uint64_t m_sequence_offset |  | uint64_t m_sequence_offset |  | uint64_t m_sequence_offset |[0m                            |
+                        | [32m|----------------------------|  |----------------------------|  |----------------------------|[0m                            |
+                        | [32m| std::deque<Timer*>         |  | std::deque<Timer*>         |  | std::deque<Timer*>         |[0m                            |
+                        | [32m| .-----------------.        |  | .-----------------.        |  | .-----------------.        |[0m                            |
+    A push happens here --+>[32m|                 |        |  | |                 |        |  | |                 |        |  [0m                          |
+                        | [32m| |-----------------|        |  | |-----------------|        |  | |-----------------|        |[0m                            |
+                        | [32m| |                 |        |  | |                 |        |  | |                 |        |[0m                            |
+                        | [32m| |-----------------|        |  | |-----------------|        |  | |-----------------|        |[0m ... max. 64 TimerQueue-s.  |
+                        | [32m| |      25         |        |  | |                 |        |  | |                 |        |[0m                            |
+                        | [32m| |-----------------|        |  | |-----------------|        |  | |-----------------|        |[0m                            |
+                        | [32m| |      22         |        |  | |       35        |        |  | |       30        |        |[0m                            |
+                        | [32m| |-----------------|        |  | |-----------------|        |  | |-----------------|        |[0m                            |
+                        | [32m| |      21         |        |  | |       30        |        |  | |       25        |        |[0m                            |
+                        | [32m|[0m [31m|-----------------|[0m        [32m|  |[0m[31m |-----------------|[0m        [32m|  |[0m [31m|-----------------|[0m        [32m|[0m                            |
+  The next to be popped --+>[31m|      20         |[0m        [32m|  |[0m [31m|       12        |[0m        [32m|  |[0m [31m|       10        |[0m        [32m|[0m         ...                | <------------------.
+                        | [32m|[0m [31m'-----------------'[0m        [32m|  |[0m [31m'-----------------'[0m        [32m|  |[0m [31m'-----------------'[0m        [32m|[0m                            |                    |
+                        | [32m'----------------------------'  '----------------------------'  '----------------------------'[0m                            |                    |
+                        '---------------------------------------------------------------------------------------------------------------------------'                    |
+      TimerQueueIndex:              0                               1                                2                           ...                                     |
+            [31m            .---------------------------------------------------------------------------------------------------------------------------.[0m                    |
+              [31mm_cache[0m:  [31m|          20                   |           12                   |          10                    |      ...                |[0m ---duplicate off---'
+                        [31m'---------------------------------------------------------------------------------------------------------------------------'[0m
+                                                                     ^                               ^
+                                       .----------0 or 1-------------'                               |
+                                      /      .---------------------------2 or 3----------------------'
+                                     /      /       .--------------------------------------4 or 5------------...> index 5 say                                                                          .
+                                    |      |       /                                                                                                                                                     . 
+                                    |      |      |                                                                                                                                                        |
+                                  [31m[31]=1 [32]=2 [33]=5 [34]=? [35]=? [36]=? [37]=? [38]=?[0m ...                                                                                                         ... [31m[63][0m
+                                    \    /        \    /        \    /        \    /                                                                                                                      /
+                                     \  /          \  /          \  /          \  /                                                                                                                      /
+                                     [31m[15]=2        [16]=5        [17]=?        [18]=?    [19]=?    [20]     [21]      [22]      [23]      [24]      [25]      [26]      [27]      [28]      [29]      [30][0m
+                                       \____   ____/               \____   ____/            \_    _/           \_    _/            \_    _/            \_    _/            \_    _/            \_    _/
+                                            \ /                         \ /                   \  /               \  /                \  /                \  /                \  /                \  /
+                                            [31m[7]=2                       [8]=?                 [9]                [10]                [11]                [12]                [13]                [14][0m
+                                              \___________   ___________/                       \_____     _____/                        \_____     _____/                       \_____     _____/
+               [31mm_tree[0m:                                    \ /                                         \   /                                    \   /                                   \   /      
+                                                          [31m[3]=2                                        [4]                                      [5]                                     [6][0m
+                                                            \______________________     _______________/                                          \__________________     ______________/
+                                                                                   \   /                                                                             \   /
+                                                                                    [31m[2]=2                                                                             [3][0m
+                                                                                       \__________________________________     ______________________________________/
+                                                                                                                          \   /
+                          [32mCurrent[0m                                                                                          [31m[1]=2[0m
+                          [32m.---------------------.[0m
+            m_current:    [32m| timer_t posix_timer |[0m
+                          [32m'---------------------'[0m
+
+Because m_cache[[35m2[0m] (which is a copy of the bottom of the corresponding TimerQueue) contains
+a pointer to a Timer with the smallest expiration time (namely 10), m_tree[1] == [35m2[0m.
+m_tree[1] is updated as part of a tournament tree by calling two functions: either
+increase_cache() or decrease_cache(), two protected functions that are respectively called
+from RunningTimers::cancel() and RunningTimers::push() while RunningTimers::m_mutex is locked.
+
+Initialization
+--------------
+
+The constructor of the singleton RunningTimers initializes RunningTimers::m_timer_signum
+with utils::Signal::reserve_and_next_rt_signum(), the next available SIGRT* (signal number
+for custom use), and initialized RunningTimers::m_timer_sigset to the same signal (as mask).
+
+This signal is subsequently used for Current::posix_timer by calling
+timer_create(CLOCK_MONOTONIC, &sigevent, &posix_timer) in the constructor of
+RunningTimers::m_current, where sigevent is filled with the value of
+RunningTimers::m_timer_signum.
+
+All of the above is a one time initialization, before even main() is reached.
+
+Glossary
+--------
+
+The words current, first, front, next (timer) might seems interchangeable, but
+in order to avoid confusion they are used with the following meaning:
+
+* Current timer: the timer that is to expire next and for which the per process
+                 POSIX timer has been set.
+* First timer: the first timer that is added when there are no timers at all.
+* Front (timer): the next timer to expire with a given interval, it will be in
+                 the front of its TimerQueue. Might already have expired.
+* The next timer to expire: the front timer of the queue pointed to by m_tree[1].
+                 This should be or become the current timer, unless it is already
+                 expired.
+
+Expiration
+----------
+
+There are two "long term" states:
+1) There are no timers.
+2) There are running timers, none of which has expired yet.
+
+In the latter case the per process POSIX timer is set to raise
+a signal when the current timer expires.
+
+Then there is one "short term" state:
+3) There are running timers some of which have expired.
+
+   1.                      2.                              3.
+  .-----------.           .-----------------.             .-----------------.
+  | No timers | --push--> | None expired    | --signal--> | One or more     |
+  '-----------'           | POSIX timer set |             | expired timers  |
+                          '-----------------'             '-----------------'
+
+When a timer expires it is guaranteed that at least one
+thread calls RunningTimers::update_current_timer(), if that
+detects that there is *another* timer that already expired,
+then at least one thread will call that function again (as
+a result of update_current_timer() returning true).
+
+It should be impossible that a timer has expired while
+RunningTimers::update_current_timer() is NOT called within
+a very short time.
+
+The reason for that is that, when call_update_current_timer()
+is called, it is guaranteed that update_current_timer() will
+be called within a short time: namely, call_update_current_timer
+calls s_call_update_current_timer.required(1) where
+s_call_update_current_timer is a static AIThreadPool::Action
+object; and by the magic of Action that guarantees that a
+thread will run from the top of the loop, and thus execute
+and enter the while loop:
+
+  while (s_call_update_current_timer.try_obtain(duty))
+  {
+    ...
+    another_timer_expired = RunningTimers::instance().update_current_timer(current_w, now);
+
+If this returns true, then
+
+    ...
+    if (another_timer_expired)
+      call_update_current_timer();
+
+otherwise the POSIX timer is set (if there is any timer left), which
+when signalling, calls call_update_current_timer() from the signal handler.
+And/or when a new timer is added that expires next (and/or is the first timer),
+which result in a call to call_update_current_timer() from
+RunningTimers::push.
+
+RunningTimers::update_current_timer() then does the following:
+
+  1) it finds the next timer to expire, which is the front timer
+     of the interval in m_tree[1], if any.
+     If there is no such timer, the calling thread will exit
+     the above while loop without taking any additional action
+     (because current_w->expired_timer is set to null).
+  2) Otherwise (if a timer is found), m_queues[next_interval]
+     was locked before we found it (obviously, the queue must
+     be locked before we can even access the Timer* it contains).
+     [ This means that if that timer is canceled, RunningTimers::cancel
+     will block on taking the lock on this queue (see below
+     what happens when that lock is released again), while if
+     the cancel obtained the lock sooner, then TimerQueue::pop()
+     is called (we're talking about the front timer after all),
+     which removes the timer from the queue (so it isn't the
+     front timer anymore). This requires m_cache to be updated
+     before RunningTimers::update_current_timer() can decided
+     upon the next timer however, because update_current_timer
+     gets the next timer from m_cache! RunningTimers::cancel
+     locks m_mutex before releasing the lock on the queue that
+     was just popped, causing update_current_timer to hang on
+     locking m_mutex immediately after locking the queue, and
+     only after m_cache is also updated will be able to continue.
+     If at that point a different queue contains the next timer
+     (m_tree[1] changed) then update_current_timer retries from
+     the start (see the 'continue' in that function), otherwise
+     'next' is set to the expiration time of the next front
+     timer (if any, otherwise 1) applies) and things continue
+     with the new front timer. ]
+  3) m_mutex is unlocked. 
+  4) If the next timer that was found already expired, it is
+     popped from the queue (locking m_mutex again) and m_tree
+     and m_cache are updated. Right before m_mutex is locked
+     it is possible that another Timer is started, but that
+     will never expire with a negative duration, so this being
+     the "next timer" can not be changed at this point (canceling
+     is blocked because the interval queue is locked).
+     Subsequently m_prevent_destruction on this timer is locked.
+     Only then the queue is unlocked and update_current_timer
+     returns.
+  5) Otherwise, if the next timer that was found didn't already
+     expire, the queue is unlocked and the POSIX timer is set
+     to generate a signal when this next timer expires.
+     This happens without m_mutex or a queue being locked; so
+     it is possible that another Timer is added that expires
+     sooner. Since there is a race here, we only set the POSIX
+     timer (again) when the new expiration point is sooner.
+     At the moment that the queue is unlocked, a cancel for
+     the just popped (expired) timer can happen. This results
+     in TimerQueue::cancel to return false (and doing nothing
+     because index will be less than zero), which in turn
+     causes RunningTimers::cancel to simply return without
+     doing anything. This means that expire() can be called
+     on a timer whose call to stop() already returned. If
+     this is a problem that the lock of m_prevent_destruction
+     has to be moved into stop() instead of being part of
+     ~Timer.
+
+
+
+
+

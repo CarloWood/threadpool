@@ -37,15 +37,15 @@ namespace threadpool {
 class RunningTimers;
 
 /**
- * A queue of running (possibly cancelled) timers, all of the same interval.
+ * A queue of running (possibly canceled) timers, all of the same interval.
  *
  * This queue stores Timer*'s. Each Timer will have the same interval (which interval
  * that is depends on the context in which the TimerQueue was found). If a pointer
- * is nullptr then it represents a cancelled timer; such timers are not removed
+ * is nullptr then it represents a canceled timer; such timers are not removed
  * from the queue because that would cost too much CPU.
  *
- * In the description of the member functions, 'current' means the next timer
- * that will be returned by pop(), also if that timer was already cancelled!
+ * In the description of the member functions, 'front' means the next timer
+ * that will be returned by pop(), also if that timer was already canceled!
  */
 class TimerQueue
 {
@@ -64,7 +64,7 @@ class TimerQueue
    *
    * The TimerQueue must be locked before calling push(), and
    * without releasing that lock the result should be passed
-   * to is_current() to check if m_running_timers was empty.
+   * to is_front() to check if m_running_timers was empty.
    * If that is the case then RunningTimers::m_mutex must
    * be locked before releasing the lock on this queue.
    * timer->get_expiration_point() can subsequently be
@@ -80,7 +80,7 @@ class TimerQueue
   }
 
   /**
-   * Check if a timer is current.
+   * Check if a timer is at the front of the queue.
    *
    * This function might need to be called after calling push, in order
    * to check if a newly added timer expires sooner than what we're
@@ -88,7 +88,7 @@ class TimerQueue
    *
    * @returns True if @a sequence is the value returned by a call to push() for a timer that is now at the front (will be returned by pop() next).
    */
-  bool is_current(uint64_t sequence) const
+  bool is_front(uint64_t sequence) const
   {
     return sequence == m_sequence_offset;
   }
@@ -96,8 +96,7 @@ class TimerQueue
   /**
    * Cancel a running timer.
    *
-   * The @a sequence passed must be returned by a previous call to push() and may not have expired.
-   * This implies that the queue cannot be empty.
+   * The @a sequence passed must be returned by a previous call to push() and may not have been canceled before.
    *
    * If this function returns true then the mutex @a m has been locked
    * and RunningTimers needs updating.
@@ -105,21 +104,22 @@ class TimerQueue
    * @param sequence : The sequence number of a previously pushed timer.
    * @param m : A reference to RunningTimers::m_mutex.
    *
-   * @returns True if the cancelled Timer was the current timer.
+   * @returns True if the canceled Timer was the front timer.
    */
   bool cancel(uint64_t sequence, std::mutex& m)
   {
-    uint64_t index = sequence - m_sequence_offset;
+    // A negative value can happen when this timer has expired and was popped in the meantime.
+    int64_t index = sequence - m_sequence_offset;
     // Sequence must be returned by a previous call to push() and the Timer may not already have expired.
-    ASSERT(index < m_running_timers.size());
+    ASSERT(index < static_cast<int64_t>(m_running_timers.size()));
     // Do not cancel a timer twice.
-    ASSERT(m_running_timers[index]);
-    bool is_current = index == 0;
-    if (is_current)
+    ASSERT(index < 0 || m_running_timers[index]);
+    bool is_front = index == 0;
+    if (is_front)
       pop(m);
-    else
+    else if (index > 0)
       m_running_timers[index] = nullptr;
-    return is_current;
+    return is_front;
   }
 
   /**
@@ -129,7 +129,7 @@ class TimerQueue
    * RunningTimers::m_mutex must be locked before calling this function.
    * The returned pointer will never be null.
    *
-   * @returns The current timer.
+   * @returns The front timer.
    */
   Timer* peek()
   {
@@ -148,7 +148,7 @@ class TimerQueue
    *
    * @param m : A reference to RunningTimers::m_mutex.
    *
-   * @returns The current timer.
+   * @returns The popped front timer.
    */
   Timer* pop(std::mutex& m)
   {
@@ -160,15 +160,15 @@ class TimerQueue
 
     Timer* timer = *b;
 
+    // The front timer may never be null?!
+    ASSERT(timer);
+
     do
     {
-      ++m_sequence_offset;
+      ++m_sequence_offset;              // This effectively marks removal when m_sequence_offset > Timer::m_sequence (by causing index in cancel() to become negative).
       ++b;
     }
-    while (b != e && *b == nullptr);   // Is the next timer cancelled?
-
-    // Mark this timer as being removed.
-    timer->removed();
+    while (b != e && *b == nullptr);    // Is the next timer canceled?
 
     // Erase the range [begin, b).
     m.lock();
@@ -191,7 +191,7 @@ class TimerQueue
   {
     if (m_running_timers.empty())
       return Timer::s_none;
-    // Note that front() is never a cancelled timer.
+    // Note that front() is never a canceled timer.
     return m_running_timers.front()->get_expiration_point();
   }
 
@@ -211,11 +211,11 @@ class TimerQueue
   // Return true if there are no running timers for the related interval.
   bool debug_empty() const { return m_running_timers.empty(); }
 
-  // Return the number of elements in m_running_timers. This includes cancelled timers.
+  // Return the number of elements in m_running_timers. This includes canceled timers.
   running_timers_type::size_type debug_size() const { return m_running_timers.size(); }
 
-  // Return the number of element in m_running_timers that are cancelled.
-  int debug_cancelled_in_queue() const
+  // Return the number of element in m_running_timers that are canceled.
+  int debug_canceled_in_queue() const
   {
     int sz = 0;
     for (auto timer : m_running_timers)

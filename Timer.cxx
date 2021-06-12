@@ -34,45 +34,82 @@
 namespace threadpool {
 
 //static
-Timer::time_point constexpr threadpool::Timer::s_none;
+Timer::time_point constexpr threadpool::TimerStart::s_none;
 
 #if CW_DEBUG
 //static
-bool Timer::s_interval_constructed = false;
+bool TimerStart::s_interval_constructed = false;
 #endif
 
-void Timer::start(Interval interval, std::function<void()> call_back, time_point now)
+void TimerStart::start(Interval interval, std::function<void()> call_back)
 {
+  DoutEntering(dc::timer, "Timer::start(" << interval << ", call_back) [" << this << "]");
+  Timer* self = static_cast<Timer*>(this);
   // Call stop() first.
-  ASSERT(!m_handle.is_running());
-  m_expiration_point = now + interval.m_duration;
-  m_call_back = call_back;
-  m_handle = RunningTimers::instance().push(interval.m_index, this);
+  ASSERT(!self->m_handle.is_running());
+  self->m_call_back = call_back;
+  self->m_handle = RunningTimers::instance().push(interval, self, self->m_expiration_point);
 }
 
-void Timer::start(Interval interval, time_point now)
+void TimerStart::start(Interval interval)
 {
+  DoutEntering(dc::timer, "Timer::start(" << interval << ") [" << this << "]");
+  Timer* self = static_cast<Timer*>(this);
   // Call stop() first.
-  ASSERT(!m_handle.is_running());
+  ASSERT(!self->m_handle.is_running());
   // Only use this on Timer objects that were constructed with a call back function.
-  ASSERT(m_call_back);
-  m_expiration_point = now + interval.m_duration;
-  m_handle = RunningTimers::instance().push(interval.m_index, this);
+  ASSERT(self->m_call_back);
+  self->m_handle = RunningTimers::instance().push(interval, self, self->m_expiration_point);
 }
 
-void Timer::stop()
+#ifdef DEBUG_SPECIFY_NOW
+// Deprecated. Debug only.
+void TimerStart::start(Interval interval, std::function<void()> call_back, time_point now)
 {
-  if (m_handle.is_running())
+  DoutEntering(dc::timer, "Timer::start(" << interval << ", call_back, " << now << ") [" << this << "]");
+  Timer* self = static_cast<Timer*>(this);
+  // Call stop() first.
+  ASSERT(!self->m_handle.is_running());
+  self->m_expiration_point = now + interval.duration();
+  self->m_call_back = call_back;
+  self->m_handle = RunningTimers::instance().push(interval.index(), self);
+}
+
+// Deprecated. Debug only.
+void TimerStart::start(Interval interval, time_point now)
+{
+  DoutEntering(dc::timer, "Timer::start(" << interval << ", " << now << ") [" << this << "]");
+  Timer* self = static_cast<Timer*>(this);
+  // Call stop() first.
+  ASSERT(!self->m_handle.is_running());
+  // Only use this on Timer objects that were constructed with a call back function.
+  ASSERT(self->m_call_back);
+  self->m_expiration_point = now + interval.duration();
+  self->m_handle = RunningTimers::instance().push(interval.index(), self);
+}
+#endif
+
+bool Timer::stop()
+{
+  DoutEntering(dc::timer, "Timer::stop() [" << this << "]");
+  // If test_and_clear_is_running returns true then the timer was still running,
+  // which means that m_call_back() wasn't called yet, and now will never be called.
+  if (m_handle.do_call_cancel())
   {
+    // This call to cancel may fail in that expire() is still called,
+    // but that won't call m_call_back() anymore because we cleared
+    // is_running, above.
     RunningTimers::instance().cancel(m_handle);
-    m_handle.set_not_running();
   }
+  return m_handle.stop_called_first();
 }
 
 void Timer::set_not_running()
 {
   m_handle.set_not_running();
 }
+
+namespace detail {
 
 void Indexes::add(Timer::time_point::rep period, Index* index)
 {
@@ -118,9 +155,30 @@ void Indexes::add(Timer::time_point::rep period, Index* index)
   RunningTimers::instantiate().initialize(m_intervals.size());
 }
 
+} //namespace detail
+
 namespace {
-SingletonInstance<Indexes> dummy __attribute__ ((__unused__));
+SingletonInstance<detail::Indexes> dummy __attribute__ ((__unused__));
 } // namespace
+
+// When the threadpool queue is full, we slow down the parent task
+// by, initially 125 microseconds and defer the task that is being
+// added by the same amount. If after that time the queue is still
+// full the delay time is doubled every time, till a maximum of 256 ms.
+std::array<Timer::Interval, number_of_slow_down_intervals> slow_down_intervals = {
+  Interval<125, std::chrono::microseconds>(),
+  Interval<250, std::chrono::microseconds>(),
+  Interval<500, std::chrono::microseconds>(),
+  Interval<1, std::chrono::milliseconds>(),
+  Interval<2, std::chrono::milliseconds>(),
+  Interval<4, std::chrono::milliseconds>(),
+  Interval<8, std::chrono::milliseconds>(),
+  Interval<16, std::chrono::milliseconds>(),
+  Interval<32, std::chrono::milliseconds>(),
+  Interval<64, std::chrono::milliseconds>(),
+  Interval<128, std::chrono::milliseconds>(),
+  Interval<256, std::chrono::milliseconds>()
+};
 
 } // namespace threadpool
 
