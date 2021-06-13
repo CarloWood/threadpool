@@ -198,9 +198,10 @@ class RunningTimers : public Singleton<RunningTimers>
     DoutEntering(dc::notice, "RunningTimers::cancel(" << &handle << ")");
 
     Timer::time_point expiration_point;
-    int cache_index = to_cache_index(handle.interval_index());
+    TimerQueueIndex const interval_index = handle.interval_index();
+    int const cache_index = to_cache_index(interval_index);
     {
-      timer_queue_t::wat queue_w(m_queues[handle.interval_index()]);
+      timer_queue_t::wat queue_w(m_queues[interval_index]);
       // If cancel() returns true then it locked m_mutex.
       if (!queue_w->cancel(handle.sequence(), m_mutex))         // Not the current timer for this interval?
         return;                                                 // Then not the current timer.

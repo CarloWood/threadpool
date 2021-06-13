@@ -46,7 +46,7 @@ void TimerStart::start(Interval interval, std::function<void()> call_back)
   DoutEntering(dc::timer, "Timer::start(" << interval << ", call_back) [" << this << "]");
   Timer* self = static_cast<Timer*>(this);
   // Call stop() first.
-  ASSERT(!self->m_handle.is_running());
+  ASSERT(self->m_handle.can_expire().is_false());
   self->m_call_back = call_back;
   self->m_handle = RunningTimers::instance().push(interval, self, self->m_expiration_point);
 }
@@ -56,7 +56,7 @@ void TimerStart::start(Interval interval)
   DoutEntering(dc::timer, "Timer::start(" << interval << ") [" << this << "]");
   Timer* self = static_cast<Timer*>(this);
   // Call stop() first.
-  ASSERT(!self->m_handle.is_running());
+  ASSERT(self->m_handle.can_expire().is_false());
   // Only use this on Timer objects that were constructed with a call back function.
   ASSERT(self->m_call_back);
   self->m_handle = RunningTimers::instance().push(interval, self, self->m_expiration_point);
@@ -69,7 +69,7 @@ void TimerStart::start(Interval interval, std::function<void()> call_back, time_
   DoutEntering(dc::timer, "Timer::start(" << interval << ", call_back, " << now << ") [" << this << "]");
   Timer* self = static_cast<Timer*>(this);
   // Call stop() first.
-  ASSERT(!self->m_handle.is_running());
+  ASSERT(self->m_handle.can_expire().is_false());
   self->m_expiration_point = now + interval.duration();
   self->m_call_back = call_back;
   self->m_handle = RunningTimers::instance().push(interval.index(), self);
@@ -81,7 +81,7 @@ void TimerStart::start(Interval interval, time_point now)
   DoutEntering(dc::timer, "Timer::start(" << interval << ", " << now << ") [" << this << "]");
   Timer* self = static_cast<Timer*>(this);
   // Call stop() first.
-  ASSERT(!self->m_handle.is_running());
+  ASSERT(self->m_handle.can_expire().is_false());
   // Only use this on Timer objects that were constructed with a call back function.
   ASSERT(self->m_call_back);
   self->m_expiration_point = now + interval.duration();
@@ -92,13 +92,13 @@ void TimerStart::start(Interval interval, time_point now)
 bool Timer::stop()
 {
   DoutEntering(dc::timer, "Timer::stop() [" << this << "]");
-  // If test_and_clear_is_running returns true then the timer was still running,
+  // If do_call_cancel returns true then the timer was still running,
   // which means that m_call_back() wasn't called yet, and now will never be called.
   if (m_handle.do_call_cancel())
   {
     // This call to cancel may fail in that expire() is still called,
-    // but that won't call m_call_back() anymore because we cleared
-    // is_running, above.
+    // but that won't call m_call_back() anymore because we called
+    // do_call_cancel(), above.
     RunningTimers::instance().cancel(m_handle);
   }
   return m_handle.stop_called_first();

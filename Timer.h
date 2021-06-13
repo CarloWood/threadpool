@@ -30,6 +30,7 @@
 #include "AIThreadPool.h"
 #include "utils/Vector.h"
 #include "utils/Singleton.h"
+#include "utils/FuzzyBool.h"
 #include "debug.h"
 #ifdef CWDEBUG
 #include <libcwd/type_info.h>
@@ -185,44 +186,44 @@ class Timer : public TimerStart
     // A Handle is read-only for the duration that the corresponding Timer is running.
     // *ALL* methods must be either const or private. The only function that may
     // change a Handle is Timer::start.
-    uint64_t m_sequence;                        ///< A sequence number that is unique within the set of Timer-s with the same interval. Only valid when running.
-    std::atomic<int> m_interval_index;          ///< A TimerQueueIndex; or one of the above three values.
+    uint64_t m_sequence;                ///< A sequence number that is unique within the set of Timer-s with the same interval. Only valid when running.
+    TimerQueueIndex m_interval_index;   ///< A TimerQueueIndex.
+    mutable std::atomic_int m_flags;
 
    public:
     /// Default constructor: construct a handle for a "not running timer".
     // The value of m_sequence is irrelevant since the default constructor of m_interval_index will turn this into a 'not running' timer,
     // the assigned magic number however will cause operator== to function.
-    Handle() : m_sequence(std::numeric_limits<uint64_t>::max() - 1), m_interval_index(s_not_running) { }
+    Handle() : m_sequence(std::numeric_limits<uint64_t>::max() - 1), m_flags(s_not_running) { }
 
     /// Construct a Handle for a running timer with interval @a interval and number sequence @a sequence.
-    constexpr Handle(TimerQueueIndex interval_index, uint64_t sequence) : m_sequence(sequence), m_interval_index(interval_index.get_value()) { }
+    constexpr Handle(TimerQueueIndex interval_index, uint64_t sequence) : m_sequence(sequence), m_interval_index(interval_index), m_flags(0) { }
 
     uint64_t sequence() const { return m_sequence; }
-    TimerQueueIndex interval_index() const
-    {
-      int interval_index = m_interval_index.load(std::memory_order_relaxed);
-      return TimerQueueIndex{static_cast<size_t>(interval_index < 0 ? -1 : interval_index)};
-    }
+    TimerQueueIndex interval_index() const { return m_interval_index; }
     bool operator==(Handle const& rhs) const { return m_sequence == rhs.m_sequence; }
 
-    bool is_running() const { return m_interval_index.load(std::memory_order_relaxed) >= 0; }
-    bool do_call_back()
+    utils::FuzzyBool can_expire() const
     {
-      int interval_index = m_interval_index.load(std::memory_order_relaxed);
-      return interval_index >= 0 && m_interval_index.compare_exchange_strong(interval_index, s_expire_called_first, std::memory_order_relaxed);
+      return (!m_interval_index.undefined() && m_flags.load(std::memory_order_relaxed) == 0) ? fuzzy::WasTrue : fuzzy::False;
     }
-    bool do_call_cancel()
+    bool do_call_back() const
     {
-      int interval_index = m_interval_index.load(std::memory_order_relaxed);
-      return interval_index >= 0 && m_interval_index.compare_exchange_strong(interval_index, s_stop_called_first, std::memory_order_relaxed);
+      int flags = m_flags.load(std::memory_order_relaxed);
+      return flags == 0 && m_flags.compare_exchange_strong(flags, s_expire_called_first, std::memory_order_relaxed);
     }
-    bool stop_called_first()
+    bool do_call_cancel() const
     {
-      return m_interval_index.load(std::memory_order_relaxed) == s_stop_called_first;
+      int flags = m_flags.load(std::memory_order_relaxed);
+      return flags == 0 && m_flags.compare_exchange_strong(flags, s_stop_called_first, std::memory_order_relaxed);
+    }
+    bool stop_called_first() const
+    {
+      return m_flags.load(std::memory_order_relaxed) == s_stop_called_first;
     }
     void set_not_running()
     {
-      m_interval_index.store(s_not_running, std::memory_order_relaxed);
+      m_interval_index.set_to_undefined();
     }
 
    private:
@@ -236,7 +237,8 @@ class Timer : public TimerStart
     Handle& operator=(Handle const& rhs)
     {
       m_sequence = rhs.m_sequence;
-      m_interval_index.store(rhs.m_interval_index.load());
+      m_interval_index = rhs.m_interval_index;
+      m_flags.store(0);
       return *this;
     }
   };
@@ -248,19 +250,28 @@ class Timer : public TimerStart
                                         ///  and m_handle can be used to find the corresponding Timer object.
   time_point m_expiration_point;        ///< The time at which we should expire (only valid when this is a running timer).
   std::function<void()> m_call_back;    ///< The callback function (only valid when this is a running timer).
-  std::mutex m_prevent_destruction;     ///< Locked while calling expire() to prevent destructing the Timer.
+  std::mutex m_calling_expire;          ///< Locked while calling expire() to prevent destructing or reusing the Timer before that finished.
 
  public:
   Timer() = default;
   Timer(std::function<void()> call_back) : m_call_back(call_back) { }
 
+  void wait_for_possible_expire_to_finish()
+  {
+    std::lock_guard<std::mutex> lk(m_calling_expire);
+  }
+
   /// Destruct the timer. If it is (still) running, stop it.
   // If stop() fails then the timer expired and might be still in the process of calling Timer::expire.
-  // Therefore wait until m_prevent_destruction can be locked again before destructing this object.
+  // Therefore wait until m_calling_expire can be locked again before destructing this object.
   // If stop() doesn't fail, then it is still possible that Timer::expire will be called, although
   // the actual call to m_call_back() was prohibited. Therefore we unconditionally must attempt to lock
-  // m_prevent_destruction.
-  ~Timer() { stop(); std::lock_guard<std::mutex> lk(m_prevent_destruction); }
+  // m_calling_expire.
+  ~Timer()
+  {
+    stop();
+    wait_for_possible_expire_to_finish();
+  }
 
   /// Stop this timer if it is (still) running.
   /// Returns true if the call to the call_back was successfully prohibited.
@@ -271,7 +282,7 @@ class Timer : public TimerStart
   {
     // Don't call release_callback while the timer is running.
     // You can call it from the call back itself however.
-    ASSERT(!m_handle.is_running());
+    ASSERT(m_handle.can_expire().is_false());
     m_call_back = std::function<void()>();
   }
 
@@ -289,16 +300,17 @@ class Timer : public TimerStart
   friend class RunningTimers;
   void expired_start()
   {
-    m_prevent_destruction.lock();       // Unlocked upon leaving expire().
+    m_calling_expire.lock();       // Unlocked upon leaving expire().
   }
 
   // Called when this timer expires.
   // Called from AIThreadPool::Worker::tmain for timers that expired (were just returned
-  // by RunningTimers::update_current_timer). Hence m_prevent_destruction is locked (see expired_start).
+  // by RunningTimers::update_current_timer). Hence m_calling_expire is locked (see expired_start).
   friend class AIThreadPool::Worker;
   void expire()
   {
-    std::lock_guard<std::mutex> lk(m_prevent_destruction, std::adopt_lock);
+    DoutEntering(dc::timer, "Timer::expire() [" << this << "]");
+    std::lock_guard<std::mutex> lk(m_calling_expire, std::adopt_lock);
     if (m_handle.do_call_back())
       m_call_back();
   }
