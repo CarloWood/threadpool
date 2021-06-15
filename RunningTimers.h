@@ -195,7 +195,7 @@ class RunningTimers : public Singleton<RunningTimers>
   /// Cancel the timer associated with handle.
   void cancel(Timer::Handle const& handle)
   {
-    DoutEntering(dc::notice, "RunningTimers::cancel(" << &handle << ")");
+    DoutEntering(dc::timer, "RunningTimers::cancel(" << &handle << ")");
 
     Timer::time_point expiration_point;
     TimerQueueIndex const interval_index = handle.interval_index();

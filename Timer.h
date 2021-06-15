@@ -27,7 +27,6 @@
 
 #pragma once
 
-#include "AIThreadPool.h"
 #include "utils/Vector.h"
 #include "utils/Singleton.h"
 #include "utils/FuzzyBool.h"
@@ -197,7 +196,14 @@ class Timer : public TimerStart
     Handle() : m_sequence(std::numeric_limits<uint64_t>::max() - 1), m_flags(s_not_running) { }
 
     /// Construct a Handle for a running timer with interval @a interval and number sequence @a sequence.
-    constexpr Handle(TimerQueueIndex interval_index, uint64_t sequence) : m_sequence(sequence), m_interval_index(interval_index), m_flags(0) { }
+    Handle(TimerQueueIndex interval_index, uint64_t sequence) : m_sequence(sequence), m_interval_index(interval_index), m_flags(0) { }
+
+    void initialize(uint64_t sequence, TimerQueueIndex interval_index)
+    {
+      m_sequence = sequence;
+      m_interval_index = interval_index;
+      m_flags.store(0, std::memory_order_relaxed);
+    }
 
     uint64_t sequence() const { return m_sequence; }
     TimerQueueIndex interval_index() const { return m_interval_index; }
@@ -224,6 +230,7 @@ class Timer : public TimerStart
     void set_not_running()
     {
       m_interval_index.set_to_undefined();
+      m_flags.store(s_not_running, std::memory_order_relaxed);
     }
 
    private:
@@ -306,7 +313,8 @@ class Timer : public TimerStart
   // Called when this timer expires.
   // Called from AIThreadPool::Worker::tmain for timers that expired (were just returned
   // by RunningTimers::update_current_timer). Hence m_calling_expire is locked (see expired_start).
-  friend class AIThreadPool::Worker;
+ public: // friend class AIThreadPool::Worker;
+  // This may ONLY be called from AIThreadPool::Worker::tmain.
   void expire()
   {
     DoutEntering(dc::timer, "Timer::expire() [" << this << "]");

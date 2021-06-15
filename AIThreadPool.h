@@ -35,17 +35,19 @@
 
 #include "AIObjectQueue.h"
 #include "AIQueueHandle.h"
-#include "debug.h"
+#include "Timer.h"
 #include "signal_safe_printf.h"
 #include "threadsafe/AIReadWriteMutex.h"
 #include "threadsafe/AIReadWriteSpinLock.h"
 #include "threadsafe/aithreadsafe.h"
 #include "utils/threading/SpinSemaphore.h"
 #include "utils/threading/aithreadid.h"
+#include "debug.h"
 #include <thread>
 #include <atomic>
 #include <cassert>
 #include <condition_variable>
+#include <deque>
 #ifdef SPINSEMAPHORE_STATS
 #include <iomanip>
 #endif
@@ -187,7 +189,7 @@ class AIThreadPool
 #ifdef CWDEBUG
       uint32_t prev_required = skipped_required & required_mask;
       Dout(dc::action, m_quoted_name << " Action::still_required(): required count " << prev_required << " --> " << prev_required + 1);
-      //signal_safe_printf("\n%s Action::required(): m_required %d --> %d\n", m_quoted_name.c_str(), prev_required, prev_required + n);
+      //signal_safe_printf("\n>>>%s Action::required(): m_required %d --> %d<<<\n", m_quoted_name.c_str(), prev_required, prev_required + 1);
 #endif
     }
 
@@ -513,6 +515,8 @@ class AIThreadPool
   std::thread::id m_constructor_id;                     // Thread id of the thread that created and/or moved AIThreadPool.
   int m_max_number_of_threads;                          // Current capacity of m_workers.
   bool m_pillaged;                                      // If true, this object was moved and the destructor should do nothing.
+  using defered_tasks_queue_t = aithreadsafe::Wrapper<std::deque<threadpool::Timer>, aithreadsafe::policy::Primitive<std::mutex>>;
+  defered_tasks_queue_t m_defered_tasks_queue;
 #ifdef CWDEBUG
   static constexpr int number_of_colors = 5;            // We have 8 colors, but can't use the background color and have to reserve two colors for the main thread and EventLoopThread.
   using color_pool_type = aithreadsafe::Wrapper<utils::ColorPool<number_of_colors>, aithreadsafe::policy::Primitive<std::mutex>>;
@@ -638,6 +642,9 @@ class AIThreadPool
     //write(1, "\nCalling s_call_update_current_timer.required()\n", 48);
     s_call_update_current_timer.required(1);
   }
+
+  // Called when handler was full. Executing lambda should recover the delay and continue possibly halted tasks.
+  void defer(AIQueueHandle queue_handle, uint8_t failure_count, std::function<void()> const& lambda);
 
 #ifdef CWDEBUG
   // Color management.

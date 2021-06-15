@@ -463,6 +463,17 @@ AIQueueHandle AIThreadPool::new_queue(int capacity, int reserved_threads)
   return index;
 }
 
+void AIThreadPool::defer(AIQueueHandle queue_handle, uint8_t failure_count, std::function<void()> const& lambda)
+{
+  DoutEntering(dc::notice, "AIThreadPool::defer(" << queue_handle << ", " << (int)failure_count << ", lambda)");
+  if (AI_UNLIKELY(failure_count >= threadpool::slow_down_intervals.size()))
+    failure_count = threadpool::slow_down_intervals.size() - 1;
+
+  defered_tasks_queue_t::wat defered_tasks_queue_w(m_defered_tasks_queue);
+  defered_tasks_queue_w->emplace_back(lambda);
+  defered_tasks_queue_w->back().start(threadpool::slow_down_intervals[failure_count]);
+}
+
 //static
 utils::threading::SpinSemaphore AIThreadPool::Action::s_semaphore;
 
