@@ -272,6 +272,25 @@ void AIThreadPool::Worker::tmain(int const self)
       // Destruct the current task if any, to decrement the RefCount.
       task = nullptr;
 
+#if 0
+      {
+        //std::vector<TimerCopy> timer_copies;
+        {
+          AIThreadPool::defered_tasks_queue_t::wat defered_tasks_queue_w(AIThreadPool::instance().m_defered_tasks_queue);
+          if (AI_UNLIKELY(!defered_tasks_queue_w->empty()))
+          {
+            // Move tasks from m_defered_tasks_queue to the thread pool queue.
+            Timer& timer = defered_tasks_queue_w->front();
+            if (timer.stop())
+            {
+              //timer_copies.emplace_back(timer);
+              defered_tasks_queue_w->pop_front();
+            }
+          }
+        }
+      }
+#endif
+
 #ifdef SPINSEMAPHORE_STATS
       if (AI_UNLIKELY(new_thread))
       {
@@ -469,9 +488,13 @@ void AIThreadPool::defer(AIQueueHandle queue_handle, uint8_t failure_count, std:
   if (AI_UNLIKELY(failure_count >= threadpool::slow_down_intervals.size()))
     failure_count = threadpool::slow_down_intervals.size() - 1;
 
-  defered_tasks_queue_t::wat defered_tasks_queue_w(m_defered_tasks_queue);
-  defered_tasks_queue_w->emplace_back(lambda);
-  defered_tasks_queue_w->back().start(threadpool::slow_down_intervals[failure_count]);
+  Timer* new_timer;
+  {
+    defered_tasks_queue_t::wat defered_tasks_queue_w(m_defered_tasks_queue);
+    defered_tasks_queue_w->emplace_back(lambda);
+    new_timer = &defered_tasks_queue_w->back();
+  }
+  new_timer->start(threadpool::slow_down_intervals[failure_count]);
 }
 
 //static

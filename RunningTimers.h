@@ -192,48 +192,19 @@ class RunningTimers : public Singleton<RunningTimers>
   int to_cache_index(TimerQueueIndex index) const { return index.get_value(); }
   TimerQueueIndex to_queues_index(int index) const { return TimerQueueIndex(index); }
 
-  /// Cancel the timer associated with handle.
-  void cancel(Timer::Handle const& handle)
-  {
-    DoutEntering(dc::timer, "RunningTimers::cancel(" << &handle << ")");
-
-    Timer::time_point expiration_point;
-    TimerQueueIndex const interval_index = handle.interval_index();
-    int const cache_index = to_cache_index(interval_index);
-    {
-      timer_queue_t::wat queue_w(m_queues[interval_index]);
-      // If cancel() returns true then it locked m_mutex.
-      if (!queue_w->cancel(handle.sequence(), m_mutex))         // Not the current timer for this interval?
-        return;                                                 // Then not the current timer.
-
-      // m_mutex is now locked.
-
-      // At this point the canceled timer is at the front of the queue;
-      // because of that we need to update (increase) the corresponding cache value.
-      // The queue is kept locked during this process to assure that 'expiration_point'
-      // for this cache_index isn't changed by having that THAT timer be canceled
-      // as well.
-
-      expiration_point = queue_w->next_expiration_point();
-    } // Unlock the queue so new timers can be added. There is no danger that the front timer
-      // will be canceled because it is required to own m_mutex for that.
-
-    bool is_current = m_tree[1] == cache_index;
-    increase_cache(cache_index, expiration_point);
-    m_mutex.unlock();
-
-    return;
-  }
-
   // Add @a timer to the list of running timers, using @a interval as timeout.
   // @a expiration_point must be a reference to timer->m_expiration_point and will
   // be filled with Timer::clock_type::now() + interval.duration().
-  Timer::Handle push(Timer::Interval interval, Timer* timer, Timer::time_point& expiration_point);
+  // timer->m_handle will be initialized before the lock on the interval queue is released.
+  void push(Timer::Interval interval, Timer* timer, Timer::time_point& expiration_point);
+
+  // Cancel the timer associated with handle.
+  void cancel(Timer::Handle const& handle);
 
 #ifdef DEBUG_SPECIFY_NOW
   // The testsuite uses this. timer->m_expiration_point must already be set.
   // It is deprecated and will be removed in the future because it results in race conditions.
-  Timer::Handle push(TimerQueueIndex interval_index, Timer* timer);
+  void push(TimerQueueIndex interval_index, Timer* timer);
 #endif
 
   void initialize(size_t number_of_intervals)

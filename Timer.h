@@ -140,6 +140,7 @@ class TimerStart
     }
 #endif
   };
+#endif // DOXYGEN
 
   /// Start the timer providing a (new) call back function, to expire after time period `interval`.
   void start(Interval interval, std::function<void()> call_back);
@@ -176,6 +177,7 @@ class TimerStart
 class Timer : public TimerStart
 {
  public:
+#ifndef DOXYGEN
   struct Handle
   {
    private:
@@ -198,11 +200,13 @@ class Timer : public TimerStart
     /// Construct a Handle for a running timer with interval @a interval and number sequence @a sequence.
     Handle(TimerQueueIndex interval_index, uint64_t sequence) : m_sequence(sequence), m_interval_index(interval_index), m_flags(0) { }
 
+    // Change the timer from s_not_running to running; at the same time initialize m_sequence and m_interval_index.
+    // This function is called from RunningTimers::push, which is called from start().
     void initialize(uint64_t sequence, TimerQueueIndex interval_index)
     {
       m_sequence = sequence;
       m_interval_index = interval_index;
-      m_flags.store(0, std::memory_order_relaxed);
+      m_flags.store(0, std::memory_order_release);
     }
 
     uint64_t sequence() const { return m_sequence; }
@@ -227,29 +231,15 @@ class Timer : public TimerStart
     {
       return m_flags.load(std::memory_order_relaxed) == s_stop_called_first;
     }
+
+    // Not const because this is called from start() and upon destruction of the singleton RunningTimers (process termination).
     void set_not_running()
     {
       m_interval_index.set_to_undefined();
       m_flags.store(s_not_running, std::memory_order_relaxed);
     }
-
-   private:
-    // start() is the only function that may assign to Handle.
-    friend void TimerStart::start(Interval interval, std::function<void()> call_back);
-    friend void TimerStart::start(Interval interval);
-#ifdef DEBUG_SPECIFY_NOW
-    friend void TimerStart::start(Interval interval, std::function<void()> call_back, time_point now);
-    friend void TimerStart::start(Interval interval, time_point now);
-#endif
-    Handle& operator=(Handle const& rhs)
-    {
-      m_sequence = rhs.m_sequence;
-      m_interval_index = rhs.m_interval_index;
-      m_flags.store(0);
-      return *this;
-    }
   };
-#endif
+#endif // DOXYGEN
 
  private:
   friend class TimerStart;

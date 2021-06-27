@@ -79,7 +79,7 @@ RunningTimers::Current::Current() : expired_timer(nullptr), expire_point(Timer::
   }
 }
 
-Timer::Handle RunningTimers::push(Timer::Interval interval, Timer* timer, Timer::time_point& expiration_point)
+void RunningTimers::push(Timer::Interval interval, Timer* timer, Timer::time_point& expiration_point)
 {
   DoutEntering(dc::timer, "RunningTimers::push(" << interval.duration() << ", " << (void*)timer << ")");
   TimerQueueIndex const interval_index = interval.index();
@@ -98,28 +98,91 @@ Timer::Handle RunningTimers::push(Timer::Interval interval, Timer* timer, Timer:
     // Being 'front' means that it is the next timer to expire with this interval.
     // The user is responsible to make sure that stop() is not called on a Timer
     // before start() returned, so this timer will not be canceled before we
-    // leave this function. Therefore it will remain the front timer until we
-    // leave this function. It is not necessary to keep the queue locked.
+    // leave this function *). Therefore it will remain the front timer until
+    // we leave this function. It is not necessary to keep the queue locked.
     // However, the timer *can* expire as soon as we unlock queue_w, therefore
     // the timer must be fully initialized before that, including m_handle.
-    timer->m_handle.initialize(sequence, interval_index);
+    // *) This is not entirely true, see the comment below.
+    if (!is_front)
+      // Lets do this before releasing the lock on queue_w.
+      timer->m_handle.initialize(sequence, interval_index);
   }
   if (is_front)
   {
+    // Note: there is an infinite small chance that Timer::stop is called
+    // here for this timer, before decrease_cache is called. But in that
+    // case m_handle.m_flags is still s_not_running and stop will have no
+    // effect and return false, meaning: sorry, it was too late to stop
+    // the timer (while in fact it was too early, but at least we won't crash).
+    //
+    // [This "can happen" as follows: if a thread pool queue is full, a Timer
+    // is default created in AIThreadPool::m_defered_tasks_queue. That timer
+    // is started (in AIThreadPool::defer) with m_defered_tasks_queue unlocked
+    // (because that is faster on the main path) which means that we could
+    // get here for the first time this happens (so we are the front timer)
+    // and then freeze right here until the other threads emptied the entire
+    // thread pool queue (that was full!) and subsequently start to process
+    // m_defered_tasks_queue. That causes stop to be called on the timer
+    // objects in the queue, until a stop() returned false... aka, this one.]
+    //
+    // It is also possible that the timer theoretically expires (we pass
+    // expiration_point), but since this timer is the front timer that
+    // means that m_cache[interval_index] still contains Timer::s_none and
+    // update_current_timer won't do anything (for this interval). It is not
+    // possible that m_cache[interval_index] will be changed, because any
+    // timers for the same interval that are added later won't be the front
+    // timer and canceling this Timer first is not possible as explained above.
     int cache_index = to_cache_index(interval_index);
     m_mutex.lock();                                                                                     // ^
     decrease_cache(cache_index, expiration_point);                                                      // | m_mutex locked
     bool is_next = m_tree[1] == cache_index;                                                            // |
+    // Unlocking m_mutex here, before initializing m_handle is a different                              // |
+    // story however: now m_cache[interval_index] contains expiration_point                             // |
+    // so the timer can already expire. When m_handle.m_flags would still                               // |
+    // be s_not_running at that point then the call to Timer::expire would                              // |
+    // not call the call back function (and will never).                                                // |
+    timer->m_handle.initialize(sequence, interval_index);                                               // |
     m_mutex.unlock();                                                                                   // v
     if (is_next)
       AIThreadPool::call_update_current_timer();
   }
-  return {interval_index, sequence};
+}
+
+void RunningTimers::cancel(Timer::Handle const& handle)
+{
+  DoutEntering(dc::timer, "RunningTimers::cancel(" << &handle << ")");
+
+  Timer::time_point expiration_point;
+  TimerQueueIndex const interval_index = handle.interval_index();
+  int const cache_index = to_cache_index(interval_index);
+  {
+    timer_queue_t::wat queue_w(m_queues[interval_index]);
+    // If cancel() returns true then it locked m_mutex.
+    if (!queue_w->cancel(handle.sequence(), m_mutex))         // Not the current timer for this interval?
+      return;                                                 // Then not the current timer.
+
+    // m_mutex is now locked.
+
+    // At this point the canceled timer is at the front of the queue;
+    // because of that we need to update (increase) the corresponding cache value.
+    // The queue is kept locked during this process to assure that 'expiration_point'
+    // for this cache_index isn't changed by having that THAT timer be canceled
+    // as well.
+
+    expiration_point = queue_w->next_expiration_point();
+  } // Unlock the queue so new timers can be added. There is no danger that the front timer
+    // will be canceled because it is required to own m_mutex for that.
+
+  bool is_current = m_tree[1] == cache_index;
+  increase_cache(cache_index, expiration_point);
+  m_mutex.unlock();
+
+  return;
 }
 
 #ifdef DEBUG_SPECIFY_NOW
 // Deprecated function left in for testsuite.
-Timer::Handle RunningTimers::push(TimerQueueIndex interval_index, Timer* timer)
+void RunningTimers::push(TimerQueueIndex interval_index, Timer* timer)
 {
   DoutEntering(dc::timer, "RunningTimers::push(" << interval_index << ", " << (void*)timer << ")");
   assert(interval_index.get_value() < m_queues.size());
@@ -140,7 +203,6 @@ Timer::Handle RunningTimers::push(TimerQueueIndex interval_index, Timer* timer)
     if (is_next)
       AIThreadPool::call_update_current_timer();
   }
-  return {interval_index, sequence};
 }
 #endif
 

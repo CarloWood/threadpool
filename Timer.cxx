@@ -48,6 +48,8 @@ void TimerStart::start(Interval interval, std::function<void()> call_back)
   // Call stop() first.
   ASSERT(self->m_handle.can_expire().is_false());
   self->m_call_back = call_back;
+  // In case this object is being reused.
+  self->m_handle.set_not_running();
   RunningTimers::instance().push(interval, self, self->m_expiration_point);
 }
 
@@ -59,6 +61,8 @@ void TimerStart::start(Interval interval)
   ASSERT(self->m_handle.can_expire().is_false());
   // Only use this on Timer objects that were constructed with a call back function.
   ASSERT(self->m_call_back);
+  // In case this object is being reused.
+  self->m_handle.set_not_running();
   RunningTimers::instance().push(interval, self, self->m_expiration_point);
 }
 
@@ -72,6 +76,8 @@ void TimerStart::start(Interval interval, std::function<void()> call_back, time_
   ASSERT(self->m_handle.can_expire().is_false());
   self->m_expiration_point = now + interval.duration();
   self->m_call_back = call_back;
+  // In case this object is being reused.
+  self->m_handle.set_not_running();
   RunningTimers::instance().push(interval.index(), self);
 }
 
@@ -85,6 +91,8 @@ void TimerStart::start(Interval interval, time_point now)
   // Only use this on Timer objects that were constructed with a call back function.
   ASSERT(self->m_call_back);
   self->m_expiration_point = now + interval.duration();
+  // In case this object is being reused.
+  self->m_handle.set_not_running();
   RunningTimers::instance().push(interval.index(), self);
 }
 #endif
