@@ -51,6 +51,13 @@ std::atomic_int AIThreadPool::s_idle_threads = ATOMIC_VAR_INIT(0);
 //static
 AIThreadPool::Action AIThreadPool::s_call_update_current_timer CWDEBUG_ONLY(("\"Timer\""));
 
+struct TimerCopy
+{
+  std::function<void()> m_callback;
+  TimerCopy(Timer& timer) : m_callback(std::move(timer.release_callback())) { }
+  ~TimerCopy() { m_callback(); }
+};
+
 //static
 void AIThreadPool::Worker::tmain(int const self)
 {
@@ -272,24 +279,29 @@ void AIThreadPool::Worker::tmain(int const self)
       // Destruct the current task if any, to decrement the RefCount.
       task = nullptr;
 
-#if 0
       {
-        //std::vector<TimerCopy> timer_copies;
+        std::vector<TimerCopy> timer_copies;
         {
           AIThreadPool::defered_tasks_queue_t::wat defered_tasks_queue_w(AIThreadPool::instance().m_defered_tasks_queue);
           if (AI_UNLIKELY(!defered_tasks_queue_w->empty()))
           {
-            // Move tasks from m_defered_tasks_queue to the thread pool queue.
-            Timer& timer = defered_tasks_queue_w->front();
-            if (timer.stop())
+            int count = std::min(defered_tasks_queue_w->size(), workers_t::rat(thread_pool.m_workers)->size());
+            timer_copies.reserve(count);
+            do
             {
-              //timer_copies.emplace_back(timer);
-              defered_tasks_queue_w->pop_front();
+              // Move tasks from m_defered_tasks_queue to the thread pool queue.
+              Timer& timer = defered_tasks_queue_w->front();
+              if (timer.stop())
+              {
+                timer_copies.emplace_back(timer);
+                defered_tasks_queue_w->pop_front();
+              }
             }
+            while (--count > 0);
           }
         }
+        // Now destruct timer_copies, which will 'expire' the copied Timer's.
       }
-#endif
 
 #ifdef SPINSEMAPHORE_STATS
       if (AI_UNLIKELY(new_thread))

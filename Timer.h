@@ -275,12 +275,15 @@ class Timer : public TimerStart
   bool stop();
 
   /// Call this to reset the call back function, destructing any possible objects that it might contain.
-  void release_callback()
+  std::function<void()> release_callback()
   {
+    std::function<void()> result;
+
     // Don't call release_callback while the timer is running.
     // You can call it from the call back itself however.
     ASSERT(m_handle.can_expire().is_false());
-    m_call_back = std::function<void()>();
+    result.swap(m_call_back);
+    return result;
   }
 
   // Return the current time in the appropriate type.
