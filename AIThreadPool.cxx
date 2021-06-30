@@ -296,6 +296,8 @@ void AIThreadPool::Worker::tmain(int const self)
                 timer_copies.emplace_back(timer);
                 defered_tasks_queue_w->pop_front();
               }
+              else if (timer.has_expired().is_true())
+                defered_tasks_queue_w->pop_front();
             }
             while (--count > 0);
           }

@@ -231,6 +231,10 @@ class Timer : public TimerStart
     {
       return m_flags.load(std::memory_order_relaxed) == s_stop_called_first;
     }
+    bool expire_called_first() const
+    {
+      return m_flags.load(std::memory_order_relaxed) == s_expire_called_first;
+    }
 
     // Not const because this is called from start() and upon destruction of the singleton RunningTimers (process termination).
     void set_not_running()
@@ -313,7 +317,21 @@ class Timer : public TimerStart
     DoutEntering(dc::timer, "Timer::expire() [" << this << "]");
     std::lock_guard<std::mutex> lk(m_calling_expire, std::adopt_lock);
     if (m_handle.do_call_back())
+    {
       m_call_back();
+      m_call_back = nullptr;
+    }
+  }
+
+  utils::FuzzyBool has_expired()
+  {
+    bool has_expired = m_handle.expire_called_first();          // An attempt to expire has been made.
+    if (has_expired && m_calling_expire.try_lock())             // And it finished.
+    {
+      m_calling_expire.unlock();
+      return fuzzy::True;
+    }
+    return m_handle.can_expire() ? fuzzy::WasFalse : fuzzy::False;
   }
 
  public:
