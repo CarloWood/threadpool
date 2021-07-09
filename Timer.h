@@ -40,6 +40,7 @@
 #include <functional>
 #include <map>
 #include <mutex>
+#include <atomic>
 
 #if defined(CWDEBUG) && !defined(DOXYGEN)
 NAMESPACE_DEBUG_CHANNELS_START
