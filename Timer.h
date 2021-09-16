@@ -320,7 +320,6 @@ class Timer : public TimerStart
     if (m_handle.do_call_back())
     {
       m_call_back();
-      m_call_back = nullptr;
     }
   }
 
