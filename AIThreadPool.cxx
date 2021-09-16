@@ -199,7 +199,7 @@ void AIThreadPool::Worker::tmain(int const self)
           // ***************************************************
           active = task();   // Invoke the functor.            *
           // ***************************************************
-          Dout(dc::threadpool, "task() returned " << active);
+          //Dout(dc::threadpool, "task() returned " << active);
         }
         catch (AIAlert::Error const& error)
         {
