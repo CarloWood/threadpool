@@ -81,7 +81,7 @@ RunningTimers::Current::Current() : expired_timer(nullptr), expire_point(Timer::
 
 void RunningTimers::push(Timer::Interval interval, Timer* timer, Timer::time_point& expiration_point)
 {
-  DoutEntering(dc::timer, "RunningTimers::push(" << interval.duration() << ", " << (void*)timer << ")");
+  DoutEntering(dc::timer(timer->mDebug), "RunningTimers::push(" << interval.duration() << ", " << (void*)timer << ")");
   TimerQueueIndex const interval_index = interval.index();
   assert(interval_index.get_value() < m_queues.size());
   uint64_t sequence;
@@ -92,7 +92,7 @@ void RunningTimers::push(Timer::Interval interval, Timer* timer, Timer::time_poi
     // expiration_point must be a reference to timer->m_expiration_point.
     ASSERT(expiration_point == timer->get_expiration_point());
 
-    Dout(dc::timer, "Inserting " << expiration_point << " into the queue.");
+    Dout(dc::timer(timer->mDebug), "Inserting " << expiration_point << " into the queue.");
     sequence = queue_w->push(timer);
     is_front = queue_w->is_front(sequence);
     // Being 'front' means that it is the next timer to expire with this interval.
@@ -105,7 +105,7 @@ void RunningTimers::push(Timer::Interval interval, Timer* timer, Timer::time_poi
     // *) This is not entirely true, see the comment below.
     if (!is_front)
       // Lets do this before releasing the lock on queue_w.
-      timer->m_handle.initialize(sequence, interval_index);
+      timer->m_handle.initialize(sequence, interval_index COMMA_CWDEBUG_ONLY(timer->mDebug));
   }
   if (is_front)
   {
@@ -141,7 +141,7 @@ void RunningTimers::push(Timer::Interval interval, Timer* timer, Timer::time_poi
     // so the timer can already expire. When m_handle.m_flags would still                               // |
     // be s_not_running at that point then the call to Timer::expire would                              // |
     // not call the call back function (and will never).                                                // |
-    timer->m_handle.initialize(sequence, interval_index);                                               // |
+    timer->m_handle.initialize(sequence, interval_index COMMA_CWDEBUG_ONLY(timer->mDebug));             // |
     m_mutex.unlock();                                                                                   // v
     if (is_next)
       AIThreadPool::call_update_current_timer();
@@ -150,7 +150,7 @@ void RunningTimers::push(Timer::Interval interval, Timer* timer, Timer::time_poi
 
 void RunningTimers::cancel(Timer::Handle const& handle)
 {
-  DoutEntering(dc::timer, "RunningTimers::cancel(" << &handle << ")");
+  DoutEntering(dc::timer(handle.debug()), "RunningTimers::cancel(" << &handle << ")");
 
   Timer::time_point expiration_point;
   TimerQueueIndex const interval_index = handle.interval_index();
@@ -184,7 +184,7 @@ void RunningTimers::cancel(Timer::Handle const& handle)
 // Deprecated function left in for testsuite.
 void RunningTimers::push(TimerQueueIndex interval_index, Timer* timer)
 {
-  DoutEntering(dc::timer, "RunningTimers::push(" << interval_index << ", " << (void*)timer << ")");
+  DoutEntering(dc::timer(timer->mDebug), "RunningTimers::push(" << interval_index << ", " << (void*)timer << ")");
   assert(interval_index.get_value() < m_queues.size());
   uint64_t sequence;
   bool is_front;
@@ -210,7 +210,7 @@ void RunningTimers::push(TimerQueueIndex interval_index, Timer* timer)
 // Otherwise return nullptr and, if there is a timer that didn't expire yet, call timer_settime(2).
 bool RunningTimers::update_current_timer(current_t::wat& current_w, Timer::time_point now)
 {
-  DoutEntering(dc::timer, "RunningTimers::update_current_timer(current_w, " << now.time_since_epoch() << " s)");
+  DoutEntering(dc::timers, "RunningTimers::update_current_timer(current_w, " << now.time_since_epoch() << " s)");
 
   // Initialize interval, next and timer to correspond to the Timer in RunningTimers
   // that is the first to expire next, if any (if not then return nullptr).
@@ -271,7 +271,7 @@ bool RunningTimers::update_current_timer(current_t::wat& current_w, Timer::time_
       timer = queue_w->pop(m_mutex);            // This act of removing it from the queue makes it      // ^
                                                 // impossible that it is canceled once the queue is     // |
                                                 // unlocked again.                                      // |
-      Dout(dc::timer|flush_cf, "Timer " << (void*)timer << " expired " <<                               // | m_mutex locked
+      Dout(dc::timer(timer->mDebug)|flush_cf, "Timer " << (void*)timer << " expired " <<                               // | m_mutex locked
           -std::chrono::duration_cast<std::chrono::nanoseconds>(duration).count() << " ns ago.");       // | (by pop(m_mutex))
       // Update m_tree and m_cache.                                                                     // |
       increase_cache(interval, queue_w->next_expiration_point());                                       // |
@@ -282,7 +282,7 @@ bool RunningTimers::update_current_timer(current_t::wat& current_w, Timer::time_
                                                 // done before we unlock queue_w because once that is
                                                 // unlocked a call to timer->stop() can return, and that
                                                 // could be called from ~Timer().
-      Dout(dc::timer, "Expired timer " << timer);
+      Dout(dc::timer(timer->mDebug), "Expired timer " << timer);
       current_w.relock(m_current);              // Lock m_current again.
       current_w->expired_timer = timer;         // Do the call back.
       return have_another_timer;                // Return true if there is another timer, expired or not.
@@ -303,7 +303,7 @@ bool RunningTimers::update_current_timer(current_t::wat& current_w, Timer::time_
   new_value.it_value.tv_nsec = ns.count();
 
   // Update the POSIX timer.
-  Dout(dc::timer|flush_cf, "Calling timer_settime() for " << new_value.it_value.tv_sec << " seconds and " << new_value.it_value.tv_nsec << " nanoseconds.");
+  Dout(dc::timers|flush_cf, "Calling timer_settime() for " << new_value.it_value.tv_sec << " seconds and " << new_value.it_value.tv_nsec << " nanoseconds.");
   current_w.relock(m_current);                  // Lock m_current again.
   // Only set the POSIX timer again when it has to expire sooner, or has already expired.
   if (next < current_w->expire_point || m_POSIX_timer_expired.load(std::memory_order_relaxed))
@@ -314,7 +314,7 @@ bool RunningTimers::update_current_timer(current_t::wat& current_w, Timer::time_
     ASSERT(pending);
     current_w->expire_point = next;
     sigprocmask(SIG_UNBLOCK, &m_timer_sigset, nullptr);
-    Dout(dc::timer|flush_cf, "Timer " << (void*)timer << " started.");
+    Dout(dc::timer(timer->mDebug)|flush_cf, "Timer " << (void*)timer << " started.");
   }
 
   // We just set the POSIX timer, so obviously there is no expired timer.
@@ -324,7 +324,7 @@ bool RunningTimers::update_current_timer(current_t::wat& current_w, Timer::time_
 
 RunningTimers::~RunningTimers()
 {
-  DoutEntering(dc::timer(m_queues.size() > 0), "RunningTimers::~RunningTimers() with m_queues.size() == " << m_queues.size());
+  DoutEntering(dc::timers(m_queues.size() > 0), "RunningTimers::~RunningTimers() with m_queues.size() == " << m_queues.size());
   // Set all timers to 'not running', otherwise they call cancel() on us when they're being destructed.
   for (TimerQueueIndex interval = m_queues.ibegin(); interval != m_queues.iend(); ++interval)
     timer_queue_t::wat(m_queues[interval])->set_not_running();

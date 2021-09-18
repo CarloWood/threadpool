@@ -100,7 +100,7 @@ void AIThreadPool::Worker::tmain(int const self)
   // The thread will keep running until Worker::quit() is called.
   while (!quit.load(std::memory_order_relaxed))
   {
-    Dout(dc::threadpool, "Beginning of thread pool main loop (q = " << q << ')');
+    Dout(dc::threadpoolloop, "Beginning of thread pool main loop (q = " << q << ')');
 
     // Handle Timers.
     while (s_call_update_current_timer.try_obtain(duty))
@@ -172,7 +172,7 @@ void AIThreadPool::Worker::tmain(int const self)
           queue.increment_active_workers();             // Undo the above decrement.
         else if (!(go_idle = ++q == queues_r->iend()))  // If there is no lower priority queue left, then just go idle.
         {
-          Dout(dc::threadpool, "Continuing with next queue.");
+          Dout(dc::threadpoolloop, "Continuing with next queue.");
           continue;                                     // Otherwise, handle the lower priority queue.
         }
         if (go_idle)
@@ -187,7 +187,7 @@ void AIThreadPool::Worker::tmain(int const self)
 
     if (!go_idle)
     {
-      Dout(dc::threadpool, "Not going idle.");
+      Dout(dc::threadpoolloop, "Not going idle.");
 
       bool active = true;
       AIQueueHandle next_q;
@@ -199,7 +199,7 @@ void AIThreadPool::Worker::tmain(int const self)
           // ***************************************************
           active = task();   // Invoke the functor.            *
           // ***************************************************
-          //Dout(dc::threadpool, "task() returned " << active);
+          Dout(dc::threadpoolloop, "task() returned " << active);
         }
         catch (AIAlert::Error const& error)
         {
@@ -525,6 +525,7 @@ std::atomic_int AIThreadPool::Action::s_woken_duty = ATOMIC_VAR_INIT(0);
 #if defined(CWDEBUG) && !defined(DOXYGEN)
 NAMESPACE_DEBUG_CHANNELS_START
 channel_ct threadpool("THREADPOOL");
+channel_ct threadpoolloop("THREADPOOLLOOP");
 channel_ct action("ACTION");            // Thread Pool Action's.
 NAMESPACE_DEBUG_CHANNELS_END
 #endif

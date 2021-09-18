@@ -43,7 +43,7 @@ bool TimerStart::s_interval_constructed = false;
 
 void TimerStart::start(Interval interval, std::function<void()> call_back)
 {
-  DoutEntering(dc::timer, "Timer::start(" << interval << ", call_back) [" << this << "]");
+  DoutEntering(dc::timer(mDebug), "Timer::start(" << interval << ", call_back) [" << this << "]");
   Timer* self = static_cast<Timer*>(this);
   // Call stop() first.
   ASSERT(self->m_handle.can_expire().is_false());
@@ -55,7 +55,7 @@ void TimerStart::start(Interval interval, std::function<void()> call_back)
 
 void TimerStart::start(Interval interval)
 {
-  DoutEntering(dc::timer, "Timer::start(" << interval << ") [" << this << "]");
+  DoutEntering(dc::timer(mDebug), "Timer::start(" << interval << ") [" << this << "]");
   Timer* self = static_cast<Timer*>(this);
   // Call stop() first.
   ASSERT(self->m_handle.can_expire().is_false());
@@ -70,7 +70,7 @@ void TimerStart::start(Interval interval)
 // Deprecated. Debug only.
 void TimerStart::start(Interval interval, std::function<void()> call_back, time_point now)
 {
-  DoutEntering(dc::timer, "Timer::start(" << interval << ", call_back, " << now << ") [" << this << "]");
+  DoutEntering(dc::timer(mDebug), "Timer::start(" << interval << ", call_back, " << now << ") [" << this << "]");
   Timer* self = static_cast<Timer*>(this);
   // Call stop() first.
   ASSERT(self->m_handle.can_expire().is_false());
@@ -84,7 +84,7 @@ void TimerStart::start(Interval interval, std::function<void()> call_back, time_
 // Deprecated. Debug only.
 void TimerStart::start(Interval interval, time_point now)
 {
-  DoutEntering(dc::timer, "Timer::start(" << interval << ", " << now << ") [" << this << "]");
+  DoutEntering(dc::timer(mDebug), "Timer::start(" << interval << ", " << now << ") [" << this << "]");
   Timer* self = static_cast<Timer*>(this);
   // Call stop() first.
   ASSERT(self->m_handle.can_expire().is_false());
@@ -99,7 +99,7 @@ void TimerStart::start(Interval interval, time_point now)
 
 bool Timer::stop()
 {
-  DoutEntering(dc::timer, "Timer::stop() [" << this << "]");
+  DoutEntering(dc::timer(mDebug), "Timer::stop() [" << this << "]");
   // If do_call_cancel returns true then the timer was still running,
   // which means that m_call_back() wasn't called yet, and now will never be called.
   if (m_handle.do_call_cancel())
@@ -193,5 +193,6 @@ std::array<Timer::Interval, number_of_slow_down_intervals> slow_down_intervals =
 #if defined(CWDEBUG) && !defined(DOXYGEN)
 NAMESPACE_DEBUG_CHANNELS_START
 channel_ct timer("TIMER");
+channel_ct timers("TIMERS");
 NAMESPACE_DEBUG_CHANNELS_END
 #endif

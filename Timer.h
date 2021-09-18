@@ -45,6 +45,7 @@
 #if defined(CWDEBUG) && !defined(DOXYGEN)
 NAMESPACE_DEBUG_CHANNELS_START
 extern channel_ct timer;
+extern channel_ct timers;
 NAMESPACE_DEBUG_CHANNELS_END
 #endif
 
@@ -85,6 +86,7 @@ class TimerStart
 
 #if CW_DEBUG && !defined(DOXYGEN)
   static bool s_interval_constructed;
+  bool mDebug;
 #endif
 
 #ifndef DOXYGEN
@@ -191,6 +193,9 @@ class Timer : public TimerStart
     uint64_t m_sequence;                ///< A sequence number that is unique within the set of Timer-s with the same interval. Only valid when running.
     TimerQueueIndex m_interval_index;   ///< A TimerQueueIndex.
     mutable std::atomic_int m_flags;
+#if CW_DEBUG
+    bool mDebug;                        // Copy of TimerStart::mDebug.
+#endif
 
    public:
     /// Default constructor: construct a handle for a "not running timer".
@@ -203,12 +208,22 @@ class Timer : public TimerStart
 
     // Change the timer from s_not_running to running; at the same time initialize m_sequence and m_interval_index.
     // This function is called from RunningTimers::push, which is called from start().
-    void initialize(uint64_t sequence, TimerQueueIndex interval_index)
+    void initialize(uint64_t sequence, TimerQueueIndex interval_index COMMA_CWDEBUG_ONLY(bool debug))
     {
       m_sequence = sequence;
       m_interval_index = interval_index;
       m_flags.store(0, std::memory_order_release);
+#if CW_DEBUG
+      mDebug = debug;
+#endif
     }
+
+#if CW_DEBUG
+    bool debug() const
+    {
+      return mDebug;
+    }
+#endif
 
     uint64_t sequence() const { return m_sequence; }
     TimerQueueIndex interval_index() const { return m_interval_index; }
@@ -255,8 +270,8 @@ class Timer : public TimerStart
   std::mutex m_calling_expire;          ///< Locked while calling expire() to prevent destructing or reusing the Timer before that finished.
 
  public:
-  Timer() = default;
-  Timer(std::function<void()> call_back) : m_call_back(call_back) { }
+  Timer(CWDEBUG_ONLY(bool debug = false)) : TimerStart{CWDEBUG_ONLY(debug)} { }
+  Timer(std::function<void()> call_back COMMA_CWDEBUG_ONLY(bool debug = false)) : TimerStart{CWDEBUG_ONLY(debug)}, m_call_back(call_back) { }
 
   void wait_for_possible_expire_to_finish()
   {
@@ -315,7 +330,7 @@ class Timer : public TimerStart
   // This may ONLY be called from AIThreadPool::Worker::tmain.
   void expire()
   {
-    DoutEntering(dc::timer, "Timer::expire() [" << this << "]");
+    DoutEntering(dc::timer(mDebug), "Timer::expire() [" << this << "]");
     std::lock_guard<std::mutex> lk(m_calling_expire, std::adopt_lock);
     if (m_handle.do_call_back())
     {
