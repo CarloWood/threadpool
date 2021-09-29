@@ -99,22 +99,22 @@ class RunningTimers : public Singleton<RunningTimers>
   // Must be constructed AFTER m_timer_signum because its constructor uses m_timer_signum.
   current_t m_current;
 
-  static int constexpr parent_of(int index)                             // Used in increase_cache and decrease_cache.
+  static constexpr int parent_of(int index)                             // Used in increase_cache and decrease_cache.
   {
     return index >> 1;
   }
 
-  static int constexpr interval_to_parent_index(int in)                 // Used in increase_cache and decrease_cache.
+  static constexpr int interval_to_parent_index(int in)                 // Used in increase_cache and decrease_cache.
   {
     return (in + tree_size) >> 1;
   }
 
-  static int constexpr sibling_of(int index)                            // Used in increase_cache.
+  static constexpr int sibling_of(int index)                            // Used in increase_cache.
   {
     return index ^ 1;
   }
 
-  static int constexpr left_child_of(int index)                         // Only used in constructor.
+  static constexpr int left_child_of(int index)                         // Only used in constructor.
   {
     return index << 1;
   }
