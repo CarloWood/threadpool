@@ -371,11 +371,7 @@ class Timer : public TimerStart
   }
 
   void print_on(std::ostream& os) const { os << "Timer:" << get_expiration_point(); }
-  friend std::ostream& operator<<(std::ostream& os, Timer const& timer)
-  {
-    timer.print_on(os);
-    return os;
-  }
+  friend std::ostream& operator<<(std::ostream& os, Timer const& timer) { timer.print_on(os); return os; }
 #endif
 };
 
