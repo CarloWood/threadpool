@@ -11,8 +11,17 @@ include(AICxxProject)
 # DEPENDENCIES
 #
 
-# This project uses timer_create and timer_settime.
-find_package(rt)
+include(CheckFunctionExists)
+
+# Use check_function_exists because we want to check if we can link it without using -lrt.
+check_function_exists(timer_create RT_TIMER_CREATE)
+
+if (RT_TIMER_CREATE)
+  set(RT_LIBRARY)
+else ()
+  # This project uses timer_create and timer_settime.
+  find_package(rt)
+endif ()
 
 #==============================================================================
 # BUILD PROJECT
