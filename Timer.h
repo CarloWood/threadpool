@@ -78,6 +78,8 @@ struct TimerTypes
 template<TimerTypes::time_point::rep count, typename Unit>
 struct Interval;
 
+struct NonTemplateInterval;
+
 class TimerStart
 {
  public:
@@ -107,9 +109,10 @@ class TimerStart
     time_point::duration m_duration;
 
    private:
-    // Only threadpool::Interval maybe construct these objects (which happens before main()).
+    // Only threadpool::Interval may construct these objects (which happens before main()).
     template<TimerTypes::time_point::rep count, typename Unit>
     friend struct threadpool::Interval;
+    friend struct threadpool::NonTemplateInterval;
     Interval(TimerQueueIndex index_, time_point::duration duration_) : m_index(index_), m_duration(duration_) { DEBUG_ONLY(TimerStart::s_interval_constructed = true); }
 
    public:
@@ -415,6 +418,15 @@ struct Register : public Index
 
 } // namespace detail
 
+// This type can be used in global array's of intervals.
+struct NonTemplateInterval
+{
+  detail::Index* index;
+  Timer::time_point::rep period;
+
+  operator Timer::Interval() const { return {TimerQueueIndex(*index), Timer::time_point::duration{period}}; }
+};
+
 template<Timer::time_point::rep count, typename Unit>
 struct Interval
 {
@@ -422,6 +434,7 @@ struct Interval
   static detail::Register<period> index;
   Interval() { }
   operator Timer::Interval() const { return {TimerQueueIndex(index), Timer::time_point::duration{period}}; }
+  operator NonTemplateInterval() const { return {&index, period}; }
 };
 
 //static
@@ -433,6 +446,6 @@ template<Timer::time_point::rep count, typename Unit>
 detail::Register<Interval<count, Unit>::period> Interval<count, Unit>::index;
 
 static constexpr int number_of_slow_down_intervals = 12;
-extern std::array<Timer::Interval, number_of_slow_down_intervals> slow_down_intervals;
+extern std::array<threadpool::NonTemplateInterval, number_of_slow_down_intervals> slow_down_intervals;
 
 } // namespace threadpool

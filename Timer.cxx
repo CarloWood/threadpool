@@ -173,7 +173,7 @@ SingletonInstance<detail::Indexes> dummy __attribute__ ((__unused__));
 // by, initially 125 microseconds and defer the task that is being
 // added by the same amount. If after that time the queue is still
 // full the delay time is doubled every time, till a maximum of 256 ms.
-std::array<Timer::Interval, number_of_slow_down_intervals> slow_down_intervals = {
+std::array<threadpool::NonTemplateInterval, number_of_slow_down_intervals> slow_down_intervals = {
   Interval<125, std::chrono::microseconds>(),
   Interval<250, std::chrono::microseconds>(),
   Interval<500, std::chrono::microseconds>(),
