@@ -51,6 +51,11 @@ std::atomic_int AIThreadPool::s_idle_threads = ATOMIC_VAR_INIT(0);
 //static
 AIThreadPool::Action AIThreadPool::s_call_update_current_timer CWDEBUG_ONLY(("\"Timer\""));
 
+#ifdef CWDEBUG
+// This function is initialize at the top of AIThreadPool::Worker::tmain and should be called every time a worker thread writes debug output.
+thread_local std::function<void()> g_thread_pool_use_color_tl;
+#endif
+
 struct TimerCopy
 {
   std::function<void()> m_callback;
@@ -61,14 +66,28 @@ struct TimerCopy
 //static
 void AIThreadPool::Worker::tmain(int const self)
 {
+  AIThreadPool& thread_pool{AIThreadPool::instance()};
+
 #ifdef CWDEBUG
   {
     std::ostringstream thread_name;
     thread_name << "ThreadPool" << std::dec << std::setfill('0') << std::setw(2) << self;
     Debug(NAMESPACE_DEBUG::init_thread(thread_name.str()));
   }
+
+  bool needs_new_color = true;
+  int assigned_color;
+  g_thread_pool_use_color_tl = [&, self](){
+    if (needs_new_color)
+    {
+      assigned_color = thread_pool.get_and_use_color();
+      workers_t::rat(thread_pool.m_workers)->at(self).set_color(assigned_color);
+      needs_new_color = false;
+    }
+    else
+      thread_pool.use_color(assigned_color);
+  };
 #endif
-  AIThreadPool& thread_pool{AIThreadPool::instance()};
 
   // Unblock the POSIX signals that are used by the timer.
   utils::Signal::unblock(RunningTimers::instance().get_timer_sigset());
@@ -325,12 +344,7 @@ void AIThreadPool::Worker::tmain(int const self)
 #endif
 #ifdef CWDEBUG
       // Thread woke up, give its debug output a new color, if any.
-      if (thread_pool.m_color2code_on)
-      {
-        int color = thread_pool.get_color();
-        workers_t::rat(thread_pool.m_workers)->at(self).set_color(color);
-        thread_pool.use_color(color);
-      }
+      needs_new_color = true;
 #endif
       // We just left sem_wait(); reset 'duty' to count how many tasks we perform
       // for this single wake-up. Calling try_obtain() with a duty larger than

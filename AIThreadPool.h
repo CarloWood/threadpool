@@ -519,8 +519,8 @@ class AIThreadPool
   using defered_tasks_queue_t = aithreadsafe::Wrapper<std::deque<threadpool::Timer>, aithreadsafe::policy::Primitive<std::mutex>>;
   defered_tasks_queue_t m_defered_tasks_queue;
 #ifdef CWDEBUG
-  static constexpr int number_of_colors = 5;            // We have 8 colors, but can't use the background color and have to reserve two colors for the main thread and EventLoopThread.
-  using color_pool_type = aithreadsafe::Wrapper<utils::ColorPool<number_of_colors>, aithreadsafe::policy::Primitive<std::mutex>>;
+  static constexpr int g_number_of_colors = 30;         // We have 32 colors, but have to reserve two colors for the main thread and EventLoopThread.
+  using color_pool_type = aithreadsafe::Wrapper<utils::ColorPool<g_number_of_colors>, aithreadsafe::policy::Primitive<std::mutex>>;
   color_pool_type m_color_pool;
   std::function<std::string(int)> m_color2code_on;      // Function that converts a color in the range [0, number_of_colors> to a terminal escape string to turn that color on.
   std::function<std::string(int)> m_color2code_off;     // Function that converts a color in the range [0, number_of_colors> to a terminal escape string to turn that color off.
@@ -663,10 +663,10 @@ class AIThreadPool
   }
 
   // Called by threadpool code.
-  int get_color()
+  int get_and_use_color()
   {
     color_pool_type::rat color_pool_r(m_color_pool);
-    return color_pool_r->get_color();
+    return color_pool_r->get_and_use_color();
   }
 #endif
 

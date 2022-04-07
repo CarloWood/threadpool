@@ -42,7 +42,6 @@
 #include <cstdint>
 #include <condition_variable>
 
-
 /**
  * A ring buffer for moveable objects.
  *
