@@ -306,7 +306,7 @@ class AIThreadPool
 
     void available_workers_add(int n) { m_available_workers.fetch_add(n, std::memory_order_relaxed); }
     // As with AIObjectQueue, the 'const' here means "safe under concurrent access".
-    // Therefore the const casst is ok, because the atomic m_available_workers is thread-safe.
+    // Therefore the const cast is ok, because the atomic m_available_workers is thread-safe.
     // Return true when the number of workers active on this queue may no longer be reduced.
     bool decrement_active_workers() const { return const_cast<std::atomic_int&>(m_available_workers).fetch_sub(1, std::memory_order_relaxed) <= 0; }
     void increment_active_workers() const { const_cast<std::atomic_int&>(m_available_workers).fetch_add(1, std::memory_order_relaxed); }
