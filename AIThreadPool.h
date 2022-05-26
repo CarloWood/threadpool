@@ -359,7 +359,7 @@ class AIThreadPool
   // Hence,
   // state 1: quit_ptr == nullptr and quit_called == false.
   // state 2: quit_ptr == adress of valid std::atomic_bool which is false and quit_called == false.
-  // state 3: quit_ptr != nullptr (nl. adress of valid std::atomic_bool which is true) and quit_called == true.
+  // state 3: quit_ptr != nullptr (nl. address of valid std::atomic_bool which is true) and quit_called == true.
   // state 4: quit_ptr != nullptr but invalid and quit_called == true.
   // state 5: quit_ptr == nullptr and quit_called == true.
   //
