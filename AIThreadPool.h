@@ -407,10 +407,14 @@ class AIThreadPool
 
     void set_color(int color) const
     {
-      std::string color_on_str = AIThreadPool::instance().m_color2code_on(color);
-      std::string color_off_str = AIThreadPool::instance().m_color2code_off(color);
-      libcwd::libcw_do.color_on().assign(color_on_str.c_str(), color_on_str.size());
-      libcwd::libcw_do.color_off().assign(color_off_str.c_str(), color_off_str.size());
+      // Only set the color when the color functions have already been initialized...
+      if (AI_LIKELY(AIThreadPool::instance().m_color2code_on))
+      {
+        std::string color_on_str = AIThreadPool::instance().m_color2code_on(color);
+        std::string color_off_str = AIThreadPool::instance().m_color2code_off(color);
+        libcwd::libcw_do.color_on().assign(color_on_str.c_str(), color_on_str.size());
+        libcwd::libcw_do.color_off().assign(color_off_str.c_str(), color_off_str.size());
+      }
     }
 #endif
 
