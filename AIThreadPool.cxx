@@ -36,6 +36,11 @@
 #include "utils/debug_ostream_operators.h"
 #ifdef CWDEBUG
 #include <libcwd/type_info.h>
+#endif
+#if defined(TRACY_ENABLE) && !defined(CWDEBUG)
+#include <common/TracySystem.hpp>
+#endif
+#if defined(TRACY_ENABLE) || defined(CWDEBUG)
 #include <iomanip>
 #endif
 
@@ -68,13 +73,19 @@ void AIThreadPool::Worker::tmain(int const self)
 {
   AIThreadPool& thread_pool{AIThreadPool::instance()};
 
-#ifdef CWDEBUG
+#if defined(CWDEBUG) || defined(TRACY_ENABLE)
   {
     std::ostringstream thread_name;
     thread_name << "ThreadPool" << std::dec << std::setfill('0') << std::setw(2) << self;
+#ifdef CWDEBUG
     Debug(NAMESPACE_DEBUG::init_thread(thread_name.str()));
+#else
+    tracy::SetThreadName(thread_name.str().c_str());
+#endif
   }
+#endif
 
+#ifdef CWDEBUG
   bool needs_new_color = true;
   int assigned_color;
   g_thread_pool_use_color_tl = [&, self](){

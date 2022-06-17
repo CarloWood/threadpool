@@ -88,6 +88,8 @@ class TimerStart
 
 #if CW_DEBUG && !defined(DOXYGEN)
   static bool s_interval_constructed;
+#endif
+#ifdef CWDEBUG
   bool mDebug;
 #endif
 
@@ -196,7 +198,7 @@ class Timer : public TimerStart
     uint64_t m_sequence;                ///< A sequence number that is unique within the set of Timer-s with the same interval. Only valid when running.
     TimerQueueIndex m_interval_index;   ///< A TimerQueueIndex.
     mutable std::atomic_int m_flags;
-#if CW_DEBUG
+#ifdef CWDEBUG
     bool mDebug;                        // Copy of TimerStart::mDebug.
 #endif
 
@@ -216,12 +218,12 @@ class Timer : public TimerStart
       m_sequence = sequence;
       m_interval_index = interval_index;
       m_flags.store(0, std::memory_order_release);
-#if CW_DEBUG
+#ifdef CWDEBUG
       mDebug = debug;
 #endif
     }
 
-#if CW_DEBUG
+#ifdef CWDEBUG
     bool debug() const
     {
       return mDebug;
