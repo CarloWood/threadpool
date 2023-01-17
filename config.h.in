@@ -1,0 +1,16 @@
+#pragma once
+
+namespace config {
+
+// DEBUG_THREADPOOL_COLORS
+//
+// Support for colored debug output requires the thread_local variable g_thread_pool_use_color_tl
+// that is defined in threadpool. A projects debug.h file might what to include support for this
+// by including threadpool/debug_colors.h but should only do so if the current executable is linked
+// with threadpool.
+//
+// You need libcwd/cwds to use this.
+
+#define DEBUG_THREADPOOL_COLORS 1
+
+} // namespace config

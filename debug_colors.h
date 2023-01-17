@@ -1,6 +1,10 @@
 #include <functional>
 
 // Include this from the debug.h in the root of the project if your project uses colors for debug output.
+// But only if CWDEBUG and DEBUG_THREADPOOL_COLORS are defined.
+#if !defined(CWDEBUG) || !defined(DEBUG_THREADPOOL_COLORS)
+#error "Only include threadpool/debug_colors.h if CWDEBUG and DEBUG_THREADPOOL_COLORS are defined."
+#endif
 
 #ifdef HAVE_UTILS_CONFIG_H
 extern thread_local std::function<void()> g_thread_pool_use_color_tl;

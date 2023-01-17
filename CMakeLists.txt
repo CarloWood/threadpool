@@ -23,12 +23,23 @@ else ()
   find_package(rt)
 endif ()
 
+# Specify threadpool specific configure file.
+configure_file(${CMAKE_CURRENT_SOURCE_DIR}/config.h.in
+               ${CMAKE_CURRENT_BINARY_DIR}/config.h
+               @ONLY)
+
 #==============================================================================
 # BUILD PROJECT
 #
 
 # This project is an OBJECT-library, used by other git submodules and the main project.
 add_library(threadpool_ObjLib OBJECT)
+
+# Tell cwds/sys.h that we have a config.h.
+target_compile_definitions(threadpool_ObjLib
+  PUBLIC
+    HAVE_THREADPOOL_CONFIG_H
+)
 
 # Set SOURCE_DIR to the current directory.
 set_property(
