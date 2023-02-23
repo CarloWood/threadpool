@@ -351,7 +351,7 @@ class Timer : public TimerStart
       m_calling_expire.unlock();
       return fuzzy::True;
     }
-    return m_handle.can_expire() ? fuzzy::WasFalse : fuzzy::False;
+    return m_handle.can_expire().is_transitory_true() ? fuzzy::WasFalse : fuzzy::False;
   }
 
  public:
