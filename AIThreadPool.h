@@ -434,7 +434,7 @@ class AIThreadPool
     Worker(Worker&& rvalue) : m_thread(std::move(rvalue.m_thread)) COMMA_CWDEBUG_ONLY(m_thread_id(m_thread.native_handle()))
     {
       quit_t::wat quit_w(m_quit);
-      quit_t::rat rvalue_quit_w(rvalue.m_quit);
+      quit_t::wat rvalue_quit_w(rvalue.m_quit);
       quit_w->m_quit_called = rvalue_quit_w->m_quit_called;
       quit_w->m_quit_ptr = rvalue_quit_w->m_quit_ptr;
       rvalue_quit_w->m_quit_called = false;
@@ -669,8 +669,8 @@ class AIThreadPool
   // Called by threadpool code.
   int get_and_use_color()
   {
-    color_pool_type::rat color_pool_r(m_color_pool);
-    return color_pool_r->get_and_use_color();
+    color_pool_type::wat color_pool_w(m_color_pool);
+    return color_pool_w->get_and_use_color();
   }
 #endif
 
