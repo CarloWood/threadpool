@@ -39,7 +39,7 @@
 #include "signal_safe_printf.h"
 #include "threadsafe/AIReadWriteMutex.h"
 #include "threadsafe/AIReadWriteSpinLock.h"
-#include "threadsafe/aithreadsafe.h"
+#include "threadsafe/threadsafe.h"
 #include "utils/threading/SpinSemaphore.h"
 #include "utils/threading/aithreadid.h"
 #include "debug.h"
@@ -151,7 +151,7 @@ class AIThreadPool
  private:
   using worker_function_t = void (*)(int const);
   using worker_container_t = std::vector<Worker>;
-  using workers_t = aithreadsafe::Wrapper<worker_container_t, aithreadsafe::policy::ReadWrite<AIReadWriteMutex>>;
+  using workers_t = threadsafe::Unlocked<worker_container_t, threadsafe::policy::ReadWrite<AIReadWriteMutex>>;
 
   class Action
   {
@@ -396,7 +396,7 @@ class AIThreadPool
  public:        // Because Timer needs to add Worker::tmain as a friend.
   struct Worker
   {
-    using quit_t = aithreadsafe::Wrapper<Quit, aithreadsafe::policy::Primitive<std::mutex>>;
+    using quit_t = threadsafe::Unlocked<Quit, threadsafe::policy::Primitive<std::mutex>>;
     // A Worker is only const when we access it from a const worker_container_t.
     // However, the (read) lock on the worker_container_t only protects the internals
     // of the container, not its elements. So, all elements are considered mutable.
@@ -515,16 +515,16 @@ class AIThreadPool
  private:
   static std::atomic<AIThreadPool*> s_instance;         // The only instance of AIThreadPool that should exist at a time.
   // m_queues is seldom write locked and very often read locked, so use AIReadWriteSpinLock.
-  using queues_t = aithreadsafe::Wrapper<queues_container_t, aithreadsafe::policy::ReadWrite<AIReadWriteSpinLock>>;
+  using queues_t = threadsafe::Unlocked<queues_container_t, threadsafe::policy::ReadWrite<AIReadWriteSpinLock>>;
   queues_t m_queues;                                    // Vector of PriorityQueue`s.
   std::thread::id m_constructor_id;                     // Thread id of the thread that created and/or moved AIThreadPool.
   int m_max_number_of_threads;                          // Current capacity of m_workers.
   bool m_pillaged;                                      // If true, this object was moved and the destructor should do nothing.
-  using defered_tasks_queue_t = aithreadsafe::Wrapper<std::deque<threadpool::Timer>, aithreadsafe::policy::Primitive<std::mutex>>;
+  using defered_tasks_queue_t = threadsafe::Unlocked<std::deque<threadpool::Timer>, threadsafe::policy::Primitive<std::mutex>>;
   defered_tasks_queue_t m_defered_tasks_queue;
 #ifdef CWDEBUG
   static constexpr int g_number_of_colors = 30;         // We have 32 colors, but have to reserve two colors for the main thread and EventLoopThread.
-  using color_pool_type = aithreadsafe::Wrapper<utils::ColorPool<g_number_of_colors>, aithreadsafe::policy::Primitive<std::mutex>>;
+  using color_pool_type = threadsafe::Unlocked<utils::ColorPool<g_number_of_colors>, threadsafe::policy::Primitive<std::mutex>>;
   color_pool_type m_color_pool;
   std::function<std::string(int)> m_color2code_on;      // Function that converts a color in the range [0, number_of_colors> to a terminal escape string to turn that color on.
   std::function<std::string(int)> m_color2code_off;     // Function that converts a color in the range [0, number_of_colors> to a terminal escape string to turn that color off.

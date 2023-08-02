@@ -29,7 +29,7 @@
 
 #include "utils/nearest_power_of_two.h"
 #include "utils/Singleton.h"
-#include "threadsafe/aithreadsafe.h"
+#include "threadsafe/threadsafe.h"
 #include "TimerQueue.h"
 #include "debug.h"
 #include <array>
@@ -82,7 +82,7 @@ class RunningTimers : public Singleton<RunningTimers>
   std::array<Timer::time_point, tree_size> m_cache;
 
   // m_queues doesn't need a mutex because it is initialized before main() and then never changed anymore.
-  using timer_queue_t = aithreadsafe::Wrapper<TimerQueue, aithreadsafe::policy::Primitive<std::mutex>>;
+  using timer_queue_t = threadsafe::Unlocked<TimerQueue, threadsafe::policy::Primitive<std::mutex>>;
   utils::Vector<timer_queue_t, TimerQueueIndex> m_queues;
 
   struct Current {
@@ -92,7 +92,7 @@ class RunningTimers : public Singleton<RunningTimers>
 
     Current();
   };
-  using current_t = aithreadsafe::Wrapper<Current, aithreadsafe::policy::Primitive<std::mutex>>;
+  using current_t = threadsafe::Unlocked<Current, threadsafe::policy::Primitive<std::mutex>>;
   int const m_timer_signum;                                             // Signal number used for the m_current::posix_timer.
   sigset_t const m_timer_sigset;                                        // Same, but as a mask.
   std::atomic_bool m_POSIX_timer_expired;                               // Set by the m_timer_signum signal handler.
