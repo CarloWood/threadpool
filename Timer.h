@@ -275,8 +275,15 @@ class Timer : public TimerStart
   std::mutex m_calling_expire;          ///< Locked while calling expire() to prevent destructing or reusing the Timer before that finished.
 
  public:
+#ifdef CWDEBUG
+  // Make sure that a passed function pointer won't call the below Timer(bool).
+  template<typename T>
+  requires requires(T t) { { std::function<void()>(t) } -> std::same_as<std::function<void()>>; }
+  Timer(T&& call_back, bool debug = false) : TimerStart(debug), m_call_back(call_back) { }
+#else
+  Timer(std::function<void()> call_back) : m_call_back(call_back) { }
+#endif
   Timer(CWDEBUG_ONLY(bool debug = false)) : TimerStart{CWDEBUG_ONLY(debug)} { }
-  Timer(std::function<void()> call_back COMMA_CWDEBUG_ONLY(bool debug = false)) : TimerStart{CWDEBUG_ONLY(debug)}, m_call_back(call_back) { }
 
   void wait_for_possible_expire_to_finish()
   {
