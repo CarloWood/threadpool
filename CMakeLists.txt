@@ -41,12 +41,6 @@ target_compile_definitions(threadpool_ObjLib
     HAVE_THREADPOOL_CONFIG_H
 )
 
-# Set SOURCE_DIR to the current directory.
-set_property(
-  TARGET threadpool_ObjLib
-  PROPERTY SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}"
-)
-
 # The list of source files.
 target_sources(threadpool_ObjLib
   PRIVATE
