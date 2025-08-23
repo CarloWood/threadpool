@@ -382,7 +382,12 @@ class Timer : public TimerStart
     return m_handle == handle;
   }
 
-  void print_on(std::ostream& os) const { os << "Timer:" << get_expiration_point(); }
+  void print_on(std::ostream& os) const
+  {
+    LIBCWD_USING_OSTREAM_PRELUDE
+    os << "Timer:" << get_expiration_point();
+  }
+
   friend std::ostream& operator<<(std::ostream& os, Timer const& timer) { timer.print_on(os); return os; }
 #endif
 };
