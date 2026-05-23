@@ -53,7 +53,7 @@ namespace threadpool {
 
 #ifndef DOXYGEN
 namespace ordering_category {
-struct TimerQueue;	// Ordering category of TimerQueue;
+struct TimerQueue { };  // Ordering category of TimerQueue;
 } // namespace ordering_category
 #endif
 

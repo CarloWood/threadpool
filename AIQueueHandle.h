@@ -31,7 +31,7 @@
 
 #ifndef DOXYGEN
 namespace ordering_category {
-struct QueueHandle;	// Ordering category of AIQueueHandle;
+struct QueueHandle { }; // Ordering category of AIQueueHandle;
 } // namespace ordering_category
 #endif
 
